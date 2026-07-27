@@ -23,14 +23,32 @@ except ImportError:                    # port without touch support
     TouchPad = None
     Pin = None
 
-HOLD_TIME_MS = 1200
+HOLD_TIME_MS      = 1200
+# A second, much longer press opens the setup portal. It has to be hard
+# to do by accident — raising an open access point because someone leaned
+# on the lamp would be a poor surprise.
+LONG_HOLD_TIME_MS = 5000
 # The baseline chases the resting value slowly enough that a finger — even
 # one resting for a minute — never gets absorbed into it.
 BASELINE_ALPHA = 0.002
 
 
 class TouchSensor:
-    """Events from update(): "tap", "hold", or None."""
+    """Events from update(): "tap", "hold", "long_hold", or None.
+
+    tap        — nudge the colour
+    hold       (1.2 s) — power on/off
+    long_hold  (5 s)   — open the setup portal
+
+    All three fire on RELEASE, not when their threshold passes. Firing at
+    the threshold meant a single five-second press emitted "hold" on the
+    way to "long_hold", so opening the setup portal always toggled the
+    lamp off first. You cannot tell a long press from a short one until
+    the finger lifts, so that is when the decision is made.
+
+    The cost is that a hold gives no feedback until release. For a lamp
+    that is a fair trade against a gesture that always did two things.
+    """
 
     def __init__(self, pin, threshold):
         self._pad = TouchPad(Pin(pin))
@@ -38,7 +56,6 @@ class TouchSensor:
         self._baseline = self._read()
         self._touched = False
         self._started = 0
-        self._hold_fired = False
 
     def _read(self):
         try:
@@ -68,16 +85,14 @@ class TouchSensor:
         if touched and not self._touched:
             self._touched = True
             self._started = now
-            self._hold_fired = False
-        elif touched and self._touched:
-            if (not self._hold_fired and
-                    utime.ticks_diff(now, self._started) >= HOLD_TIME_MS):
-                self._hold_fired = True
-                return "hold"
         elif not touched and self._touched:
             self._touched = False
-            if not self._hold_fired:
-                return "tap"
+            held = utime.ticks_diff(now, self._started)
+            if held >= LONG_HOLD_TIME_MS:
+                return "long_hold"
+            if held >= HOLD_TIME_MS:
+                return "hold"
+            return "tap"
         return None
 
 

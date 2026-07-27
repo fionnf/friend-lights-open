@@ -45,13 +45,19 @@ class Transport:
     # Minimum gap between outbound frames. 0 = send whatever you like.
     min_interval_ms = 0
 
+    # Backoff bounds for automatic reconnection.
+    RETRY_MIN_MS = 60_000
+    RETRY_MAX_MS = 30 * 60 * 1000
+
     def __init__(self):
         self._next_send_at = 0
+        self._retry_at = None
+        self._retry_backoff = 0
         self.connected = False
 
     # ── Lifecycle ───────────────────────────────────────────
 
-    def start(self):
+    def start(self, tick=None):
         """Bring the link up. Best-effort; set self.connected."""
         self.connected = False
 
@@ -148,6 +154,56 @@ class Router:
             if t.send(payload, force=force):
                 sent += 1
         return sent
+
+    def service(self, tick=None):
+        """Retry any transport that has dropped, with backoff.
+
+        Without this a link is lost permanently. A UART hiccup sets
+        `connected` to False, nothing ever calls start() again, and there
+        is no daily reboot in this firmware to paper over it — so a lamp
+        would sit there looking fine and silently stop reaching its
+        friend until someone unplugged it.
+
+        `tick` is handed to start() so a 90 s LoRaWAN join keeps the lamp
+        rendering and the watchdog fed instead of freezing mid-breath.
+        """
+        now = utime.ticks_ms()
+        for t in self.transports:
+            if t.connected:
+                t._retry_at = None          # recovered; forget the backoff
+                t._retry_backoff = 0
+                continue
+            if t._retry_at is None:
+                # Wait one interval before the first retry — a transport
+                # that just failed to start is unlikely to succeed now.
+                t._retry_backoff = t.RETRY_MIN_MS
+                t._retry_at = utime.ticks_add(now, t._retry_backoff)
+                continue
+            if utime.ticks_diff(now, t._retry_at) < 0:
+                continue
+            print("[net] retrying %s" % t.name)
+            try:
+                t.start(tick=tick)
+            except Exception as e:
+                print("[net] %s retry failed: %s" % (t.name, e))
+            t._retry_backoff = min(t._retry_backoff * 2, t.RETRY_MAX_MS)
+            t._retry_at = utime.ticks_add(now, t._retry_backoff)
+
+    def ready(self):
+        """True if any transport would accept a frame right now.
+
+        Callers check this BEFORE building a payload. Without it, code of
+        the shape
+
+            if dirty and router.send(build_frame()):
+
+        rebuilds the frame on every pass of the render loop — Python
+        evaluates the argument before it can be refused. With LoRaWAN
+        throttled to 15 minutes that is roughly a million discarded
+        allocations between two sends, and if no transport is connected
+        at all, it never stops.
+        """
+        return any(t.ready_to_send() for t in self.transports)
 
     def any_connected(self):
         return any(t.connected for t in self.transports)

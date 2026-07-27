@@ -54,6 +54,9 @@ export default {
     if (env.SHARED_SECRET) {
       const presented = request.headers.get("x-shared-secret");
       if (presented !== env.SHARED_SECRET) {
+        // Logged because this is the interesting one: either the webhook
+        // header is wrong, or somebody found the URL.
+        console.log("REJECTED: bad or missing x-shared-secret");
         return new Response("forbidden", { status: 403 });
       }
     }
@@ -70,14 +73,23 @@ export default {
     if (!sender || !payload) {
       // Join accepts and status events land here too. Not an error —
       // just nothing to forward.
+      console.log(
+        `ignored: no uplink payload (device=${sender || "?"}) — if you ` +
+          `only ever see these, the webhook has extra event types enabled`
+      );
       return new Response("ignored", { status: 200 });
     }
+    console.log(`uplink from ${sender}: ${payload}`);
 
     // TTN fills these in for us, so no URL or key is hardcoded. The URL
     // it gives is scoped to the SENDING device, so swap in each peer.
     const replaceUrl = request.headers.get("x-downlink-replace");
     const apiKey = request.headers.get("x-downlink-apikey");
     if (!replaceUrl || !apiKey) {
+      console.log(
+        "ERROR: TTN sent no downlink headers — the webhook has no " +
+          "Downlink API key set, so this bridge cannot reply"
+      );
       return new Response(
         "webhook is missing downlink headers — set a Downlink API key " +
           "on the webhook in the TTN console",
@@ -89,13 +101,20 @@ export default {
       .map((s) => s.trim())
       .filter((id) => id && id !== sender);
 
+    // The Things Stack documents these headers as operation *paths*. In
+    // practice it sends absolute URLs, but handling both costs one line
+    // and the failure mode otherwise is a completely silent no-op.
+    const cluster = env.TTN_CLUSTER || "eu1";
+    const base = replaceUrl.startsWith("http")
+      ? ""
+      : `https://${cluster}.cloud.thethings.network`;
+
     const results = await Promise.all(
       lamps.map(async (peer) => {
         // .../devices/<sender>/down/replace -> .../devices/<peer>/down/replace
-        const url = replaceUrl.replace(
-          `/devices/${sender}/`,
-          `/devices/${peer}/`
-        );
+        const url =
+          base +
+          replaceUrl.replace(`/devices/${sender}/`, `/devices/${peer}/`);
         const res = await fetch(url, {
           method: "POST",
           headers: {
@@ -112,12 +131,23 @@ export default {
             ],
           }),
         });
+        if (res.status !== 200) {
+          const detail = await res.text();
+          console.log(
+            `FAILED -> ${peer}: HTTP ${res.status} ${detail.slice(0, 200)}`
+          );
+        } else {
+          console.log(`scheduled -> ${peer}`);
+        }
         return `${peer}:${res.status}`;
       })
     );
 
-    return new Response(`${sender} -> ${results.join(" ") || "(no peers)"}\n`, {
-      status: 200,
-    });
+    const summary = `${sender} -> ${results.join(" ") || "(no peers)"}`;
+    // TTN discards webhook response bodies, so this line is the only
+    // record of what happened. It is what you read in the Cloudflare
+    // Workers "Logs" tab when a lamp is not hearing its friend.
+    console.log(summary);
+    return new Response(summary + "\n", { status: 200 });
   },
 };

@@ -17,8 +17,15 @@ LAMP_NAME = "Zurich"          # shown in the app; free text
 # Use OTAA. DevEui is per-device; AppEui and AppKey come from the
 # application you registered it under.
 LORA_ENABLED = True
+# DevEUI: unique per lamp — let TTN generate it.
 LORA_DEV_EUI = "0000000000000000"
-LORA_APP_EUI = "0000000000000000"
+# JoinEUI (called AppEUI in the older spec): identifies the join server,
+# so it is the SAME on both lamps. TTN's docs say all-zeros is fine, and
+# it usually is — but some LoRaWAN stacks read all-zeros as "not
+# configured yet" and silently refuse to join. Making one up costs
+# nothing and removes the possibility, so use any non-zero value and put
+# the identical one in the TTN console.
+LORA_APP_EUI = "0011223344556677"
 LORA_APP_KEY = "00000000000000000000000000000000"
 LORA_REGION  = "EU868"        # EU868 / US915 / AU915 / AS923 ...
 LORA_CLASS   = "C"            # C: mains-powered, receives at any time
@@ -30,10 +37,16 @@ LORA_TX_PIN  = 43
 LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
-# How often we may transmit. TTN allows 30 s of airtime per device per
-# day; a 10-byte frame at SF9 costs ~0.2 s, so ~150 uplinks/day exist.
-# 15 minutes spends about half of that and leaves headroom.
-LORA_MIN_INTERVAL_MS = 15 * 60 * 1000
+# How often we may transmit when something has changed.
+#
+# The limit is NOT our own airtime — 30 s/day at ~0.2 s a frame allows
+# about 150 uplinks. The limit is that every uplink the bridge forwards
+# becomes a DOWNLINK on your friend's lamp, and TTN allows each device
+# only TEN downlinks a day. Uplinking more often just means the extra
+# ones are discarded before they reach them.
+#
+# Budget: 2/day for heartbeats + 8/day for changes = 10.
+LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
 
 # ── WiFi (optional) ─────────────────────────────────────────
 # Entirely optional. A lamp with no WiFi works perfectly over LoRa alone;
@@ -72,5 +85,20 @@ ARRIVAL_FADE_MS = 90 * 1000
 BREATHE_SPEED = 0.0008
 BREATHE_DEPTH = 0.04
 
+
+
 # ── Watchdog ────────────────────────────────────────────────
+# ── Control network ─────────────────────────────────────────
+# The lamp runs its own WiFi network permanently, so you can control it
+# from a phone at any time without spending one of the ten daily
+# messages. Join "lamp-<name>" and the page opens by itself; if it
+# does not, browse to http://192.168.4.1
+#
+# WPA2 needs at least 8 characters. A shorter one is silently ignored by
+# the ESP32 and you would get an OPEN network without being told.
+PORTAL_ENABLED   = True
+PORTAL_ALWAYS_ON = True
+PORTAL_SSID      = "deLENIghted-1"   # max 32 characters
+PORTAL_PASSWORD  = "lightupleni"        # min 8 — see above
+
 WATCHDOG_ENABLED = True

@@ -86,8 +86,13 @@ def encode(lamp_id, hue_total, warm_total, touch_count,
 def decode(payload):
     """Unpack a payload into a dict. Raises DecodeError on anything
     unusable — short frames, wrong version, reserved lamp_id 0."""
-    if payload is None:
-        raise DecodeError("no payload")
+    # The type is checked before converting, not after. Two reasons:
+    # bytes() raises TypeError on a str — and TypeError is not what the
+    # main loop catches, so it escaped and crash-rebooted the lamp — while
+    # bytes(50000) does not raise at all, it quietly allocates fifty
+    # thousand zero bytes on a device with a few hundred KB of RAM.
+    if not isinstance(payload, (bytes, bytearray, memoryview)):
+        raise DecodeError("payload is not bytes")
     data = bytes(payload)
     if len(data) < PAYLOAD_LEN:
         raise DecodeError("payload too short: %d bytes" % len(data))

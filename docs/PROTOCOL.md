@@ -105,12 +105,31 @@ budgets:
 | WiFi / MQTT | ~100 ms | unlimited | send on every change |
 | LoRaWAN / TTN | 2–10 s | **10** | throttled to ~15 min |
 
-### Airtime arithmetic
+### What actually limits how often a lamp speaks
 
-TTN allows 30 s of uplink airtime per device per day. A 10-byte frame at
-SF9 costs roughly 0.2 s, so the allowance is about **150 uplinks/day**.
-Spending half leaves ~75/day — one every ~19 minutes. The firmware rounds
-to **15 minutes** and leaves headroom for the join and forced sends.
+Not its own airtime — that was the first answer here and it was wrong.
+
+TTN allows 30 s of uplink airtime per device per day, and a 10-byte frame
+at SF9 costs ~0.2 s, so about **150 uplinks/day** are available. That is
+not the constraint.
+
+The constraint is the **friend's** allowance. Every uplink the bridge
+forwards becomes a downlink on their lamp, and each device may receive
+only **ten downlinks a day**. Uplinking more often does not deliver more
+— the surplus is discarded before it reaches them, having cost the
+transmission anyway.
+
+So the send budget is ten a day:
+
+| | Interval | Per day |
+|---|---|---|
+| Heartbeat (idle) | 12 h | 2 |
+| Change-driven, throttled | 3 h | up to 8 |
+| | | **10** |
+
+`tools/simulate.py` is what caught this: the original 15-minute /
+1-hour figures produced 38 uplinks a day against a 10/day cap, with three
+quarters of them silently discarded.
 
 Uplinks are **unconfirmed**. A confirmed uplink asks for an ACK, and every
 ACK is a downlink billed against the ten-per-day allowance. The CRDT does

@@ -19,6 +19,7 @@ from palette import BASE_WARM_WHITE
 from driver import Strip
 from touch import TouchManager
 from engine import Engine
+from portal import Portal
 from net.transport import Router
 
 import config
@@ -27,7 +28,11 @@ FIRMWARE_VERSION = "2026-07-27.1"
 FRAME_MS         = 16
 STATE_FILE       = "state.json"
 STATE_FLUSH_MS   = 5 * 60 * 1000
-HEARTBEAT_MS     = 60 * 60 * 1000     # re-send our totals hourly even if idle
+# Every uplink the bridge forwards becomes a DOWNLINK on the peer, and
+# the peer may only receive ten a day. So this is budgeted against the
+# friend's allowance, not our own airtime: 2 heartbeats a day, leaving 8
+# for actual changes. See docs/PROTOCOL.md.
+HEARTBEAT_MS     = 12 * 60 * 60 * 1000
 
 wdt = None
 
@@ -37,11 +42,99 @@ def feed():
         wdt.feed()
 
 
+PROVISION_FILE = "provision.json"
+_provision = {}
+
+
+def load_provision():
+    """Values entered through the setup portal, which win over config.py.
+
+    Kept as a JSON overlay rather than rewriting config.py: generating
+    Python source on a device that then has to import it is a good way to
+    brick a lamp that cannot be recovered over the air.
+    """
+    global _provision
+    try:
+        with open(PROVISION_FILE) as f:
+            data = ujson.load(f)
+        _provision = data if isinstance(data, dict) else {}
+    except Exception:
+        _provision = {}
+
+
 def _cfg(name, default):
     """Config values must be read with a fallback: config.py is never
     overwritten, so a lamp already in someone's house will not have keys
     added by a later version."""
+    if name in _provision:
+        return _provision[name]
     return getattr(config, name, default)
+
+
+# ── Provisioning from the portal ─────────────────────────────
+
+def _is_hex(value, length):
+    if not isinstance(value, str) or len(value) != length:
+        return False
+    for c in value:
+        if c not in "0123456789abcdefABCDEF":
+            return False
+    return True
+
+
+def apply_provision(data):
+    """Validate and persist settings from the setup portal.
+
+    Returns True if anything was saved. Everything is checked here rather
+    than in the browser: the portal is an open access point, so the page
+    is not a trustworthy source, and bad TTN keys would leave the lamp
+    unable to join with no obvious reason why.
+    """
+    update = {}
+
+    if "lamp_id" in data:
+        try:
+            lamp_id = int(data["lamp_id"])
+        except (TypeError, ValueError):
+            return False
+        if not (1 <= lamp_id <= 255):
+            return False
+        update["LAMP_ID"] = lamp_id
+
+    for field, key, length in (("dev_eui", "LORA_DEV_EUI", 16),
+                               ("app_eui", "LORA_APP_EUI", 16),
+                               ("app_key", "LORA_APP_KEY", 32)):
+        if field in data:
+            value = str(data[field]).replace(" ", "")
+            if not _is_hex(value, length):
+                return False
+            update[key] = value.upper()
+
+    ssid = data.get("wifi_ssid")
+    if isinstance(ssid, str) and 0 < len(ssid) <= 32:
+        password = data.get("wifi_pass")
+        password = password if isinstance(password, str) else ""
+        if len(password) <= 64:
+            update["WIFI_NETWORKS"] = [[ssid, password]]
+            update["WIFI_ENABLED"] = True
+
+    if not update:
+        return False
+
+    global _provision
+    merged = dict(_provision)
+    merged.update(update)
+    try:
+        _write_json(PROVISION_FILE, merged)
+    except Exception as e:
+        print("[provision] save failed: %s" % e)
+        return False
+    # Keep the in-memory copy in step, or a second save in the same
+    # session would merge against a stale (usually empty) dict and
+    # silently drop everything entered before it.
+    _provision = merged
+    print("[provision] saved: %s" % sorted(update.keys()))
+    return True
 
 
 # ── Flash ────────────────────────────────────────────────────
@@ -111,7 +204,8 @@ def build_transports(tick=None):
                 region=_cfg("LORA_REGION", "EU868"),
                 lora_class=_cfg("LORA_CLASS", "C"),
                 port=_cfg("LORA_PORT", 8),
-                min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS", 900_000))
+                min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
+                                     3 * 60 * 60 * 1000))
             lora.start(tick=tick)
             router.add(lora)
         except Exception as e:
@@ -123,7 +217,7 @@ def build_transports(tick=None):
             prefix = _cfg("MQTT_PREFIX", "friendlights")
             mqtt = MQTTWiFi(_mqtt_factory,
                             prefix + "/state",
-                            prefix + "/status/%d" % config.LAMP_ID)
+                            prefix + "/status/%d" % _cfg("LAMP_ID", 1))
             mqtt.start(tick=tick)
             router.add(mqtt)
         except Exception as e:
@@ -203,6 +297,8 @@ class Pulser:
 def main():
     global wdt
 
+    load_provision()                    # portal settings win over config.py
+
     lamp_id = _cfg("LAMP_ID", 1)
     print("[boot] friend-lights-open %s — lamp %d (%s)"
           % (FIRMWARE_VERSION, lamp_id, _cfg("LAMP_NAME", "")))
@@ -235,6 +331,31 @@ def main():
 
     pulser.stop()
 
+    # Local control and provisioning, raised on demand by a 5 s press.
+    # Never on by default: an always-up open access point is needless
+    # exposure and pointless RF noise.
+    restart_at = [None]
+
+    def on_config(data):
+        if not apply_provision(data):
+            return False
+        # Reboot from the main loop, not from here — this runs inside the
+        # HTTP handler and resetting now would drop the response, leaving
+        # the user staring at a failed save that actually worked.
+        restart_at[0] = utime.ticks_add(utime.ticks_ms(), 2_000)
+        return True
+
+    name = _cfg("LAMP_NAME", "")
+    portal = Portal(
+        shared, engine, lamp_id, on_config=on_config,
+        password=_cfg("PORTAL_PASSWORD", None),
+        always_on=_cfg("PORTAL_ALWAYS_ON", True),
+        ssid=_cfg("PORTAL_SSID",
+                  ("lamp-%s" % name.lower().replace(" ", "-")) if name
+                  else "lamp-%d" % lamp_id))
+    if _cfg("PORTAL_ENABLED", True) and _cfg("PORTAL_ALWAYS_ON", True):
+        portal.start()
+
     def current_frame(touched=False):
         h, w, t = shared.my_totals()
         return codec.encode(lamp_id, h, w, t,
@@ -246,6 +367,7 @@ def main():
     next_flush     = utime.ticks_add(now, STATE_FLUSH_MS)
     next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
     next_gc        = utime.ticks_add(now, 60_000)
+    next_retry     = utime.ticks_add(now, 30_000)
     dirty          = False              # we have news the peers lack
 
     # One write per boot guarantees the file exists, so a lamp that loses
@@ -261,8 +383,11 @@ def main():
         for raw in router.poll():
             try:
                 msg = codec.decode(raw)
-            except codec.DecodeError:
-                continue                # junk on a public medium is normal
+            except Exception:
+                # Deliberately broad. Junk on a public radio medium is
+                # normal, and no malformed frame may ever be able to take
+                # down a lamp that has no over-the-air recovery.
+                continue
             if shared.apply_remote(msg["lamp_id"],
                                    msg["hue_total"], msg["warm_total"],
                                    msg["touch_count"],
@@ -274,7 +399,10 @@ def main():
         event = touch.update()
         if event == "tap":
             shared.touch()
-            engine.note_arrival()       # keep our own touches out of the pulse
+            # Advance the pulse baseline WITHOUT pulsing: a pulse means
+            # "your friend reached for their lamp". Flashing at your own
+            # touch would drown the only signal it carries.
+            engine.note_arrival(pulse=False)
             dirty = True
             # Persist immediately. The 5-minute flush is fine for
             # brightness, but losing our own counter is worse than losing
@@ -288,17 +416,35 @@ def main():
             engine.toggle_power()
             dirty = True
             save_state(shared, engine, force=True)
+        elif event == "long_hold" and _cfg("PORTAL_ENABLED", True):
+            if portal.active:
+                portal.stop()
+            elif portal.start():
+                print("[portal] join WiFi '%s' then open any page" % portal.ssid)
+
+        # ── Local control portal ──
+        portal.tick()
+
+        if restart_at[0] is not None and utime.ticks_diff(now, restart_at[0]) >= 0:
+            print("[provision] restarting to apply new settings")
+            save_state(shared, engine, force=True)
+            portal.stop()
+            machine.reset()
 
         # ── Send ──
-        # The transports throttle themselves, so this may simply be
-        # declined; `dirty` stays set until something actually takes it.
-        if dirty and router.send(current_frame(touched=True)):
-            dirty = False
+        # router.ready() is checked FIRST so the frame is only built when
+        # something will actually take it. `dirty` stays set until then,
+        # and this loop runs ~1000×/s, so building it unconditionally
+        # meant a million discarded allocations between two LoRa sends.
+        if dirty and router.ready():
+            if router.send(current_frame(touched=True)):
+                dirty = False
 
         if utime.ticks_diff(now, next_heartbeat) >= 0:
             # Costs one uplink an hour and means a lamp that missed
             # everything still converges without anyone touching anything.
-            router.send(current_frame())
+            if router.ready():
+                router.send(current_frame())
             next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
 
         # ── Housekeeping ──
@@ -309,6 +455,14 @@ def main():
         if utime.ticks_diff(now, next_gc) >= 0:
             gc.collect()
             next_gc = utime.ticks_add(now, 60_000)
+
+        # ── Bring dropped links back ──
+        # Keep rendering and feeding the watchdog through a reconnect: a
+        # LoRaWAN join blocks for up to 90 s and would otherwise freeze
+        # the lamp mid-breath and then trip the watchdog.
+        if utime.ticks_diff(now, next_retry) >= 0:
+            router.service(tick=lambda: (feed(), engine.tick(strip)))
+            next_retry = utime.ticks_add(now, 30_000)
 
         # ── Render ──
         if utime.ticks_diff(now, next_frame) >= 0:
