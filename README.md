@@ -15,6 +15,21 @@ hotspot, no monthly bill. About **€35 a lamp**, once.
 > real gateway. Descended from
 > [linked_friend_lights](https://github.com/fionnf/linked_friend_lights).
 
+### Controlling a lamp
+
+Each lamp runs its own WiFi network, always on. No app to install, works
+on any phone, and it costs nothing — local control never spends one of
+the ten daily messages.
+
+| | |
+|---|---|
+| **Network** | `lamp-zurich` / `lamp-cork` — from `LAMP_NAME` |
+| **Password** | `lightupleni` — the same on both, in `config.lampN.py` |
+| **Page** | opens by itself, or browse to **http://192.168.4.1** |
+
+Your phone will warn the network has no internet. That is correct — the
+lamp is not a router. Stay connected anyway.
+
 ---
 
 ## Contents
@@ -614,6 +629,19 @@ Tap **R** on the board. You want:
 The strip breathes warm white while it joins — this can take a minute —
 then settles.
 
+### Reach it from your phone
+
+The control network is up from boot, before LoRaWAN has even joined:
+
+| | |
+|---|---|
+| Network | `lamp-zurich` — whatever `LAMP_NAME` says |
+| Password | `lightupleni` |
+| Page | opens by itself, or **http://192.168.4.1** |
+
+That page is also the quickest way to confirm the board is alive and the
+strip is wired correctly, without waiting on the radio at all.
+
 ### Watch it work in TTN
 
 This is the tool that tells you what's actually happening, so it's worth
@@ -758,9 +786,10 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 | Colour jumps backwards after a reboot | Counters weren't persisted | Should not happen — please open an issue |
 | Strip lights white, wrong colours | `LED_ORDER` | SK6812 is `GRBW`, WS2812 is `GRB` |
 | Touch never fires / fires constantly | Threshold | Print `TouchPad.read()` and set `TOUCH_THRESHOLD` between resting and touched |
-| Portal network doesn't appear | Held for under 5 s, or `PORTAL_ENABLED = False` | Keep holding; the strip keeps rendering throughout |
-| Joined the portal, no page opened | Phone suppressed the captive-portal prompt | Open a browser and go to `192.168.4.1` |
-| Portal vanished | 5-minute idle timeout | Hold the pad again |
+| `lamp-…` network doesn't appear | `PORTAL_ENABLED = False`, or toggled off by a 5 s hold | Hold the pad 5 s again; the strip keeps rendering throughout |
+| Network appears but the password is rejected | `PORTAL_PASSWORD` under 8 characters | The ESP32 silently ignores short passwords and comes up **open** — the boot log says which mode it used |
+| Joined, but no page opened | Phone suppressed the captive-portal prompt | Browse to **http://192.168.4.1** |
+| Page loads, buttons do nothing | Lamp busy joining LoRaWAN | Wait for `[lorawan] joined`, then reload |
 | Colour changes feel far too slow | Working as intended | See [above](#living-with-ten-messages-a-day) |
 
 ---
