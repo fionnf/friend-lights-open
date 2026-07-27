@@ -26,23 +26,19 @@ PULSE_MS    = 700
 PULSE_DEPTH = 0.35
 
 
-def _shortest_delta(current, target):
-    """Signed distance around a circle, in (-0.5, 0.5].
-
-    Hue wraps, so fading from 0.95 to 0.05 must travel 0.1 forwards
-    through the wrap point, not 0.9 backwards through every other colour
-    on the wheel.
-    """
-    return (target - current + 0.5) % 1.0 - 0.5
-
-
 class Engine:
 
     def __init__(self, shared, num_leds, brightness=0.6,
                  arrival_fade_ms=90_000,
-                 breathe_speed=0.0008, breathe_depth=0.04):
+                 breathe_speed=0.0008, breathe_depth=0.04,
+                 num_groups=3, group_min_leds=1, group_max_leds=8,
+                 group_spread=0.35):
         self.shared = shared
         self.num_leds = num_leds
+        self.num_groups = max(1, min(int(num_groups), int(num_leds)))
+        self.group_min_leds = group_min_leds
+        self.group_max_leds = group_max_leds
+        self.group_spread = group_spread
 
         self._brightness = brightness
         self._powered_on = True
@@ -52,12 +48,21 @@ class Engine:
         # Displayed values chase the agreed ones. Seeded from the agreed
         # state so a reboot comes back at the right colour rather than
         # sweeping to it from warm white.
-        self._hue = shared.hue()
+        self._hue = shared.position()
         self._warmth = shared.warmth()
+        self._group_pos = [shared.group_position(i, self.num_groups,
+                                                 group_spread)
+                           for i in range(self.num_groups)]
+        # Zone layout is derived from a hash, so it is recomputed only
+        # when the counter actually moves rather than 60 times a second.
+        self._layout_key = None
+        self._sizes = None
+        self._refresh_layout()
 
         # Max distance on the wheel is 0.5, so this is the worst-case
         # arrival time; nearer colours land sooner.
-        self._hue_rate = 0.5 / max(1, arrival_fade_ms)
+        # Full travel of the palette in one arrival time.
+        self._hue_rate = 1.0 / max(1, arrival_fade_ms)
         self._warm_rate = 1.0 / max(1, arrival_fade_ms)
 
         self._breathe_speed = breathe_speed
@@ -132,41 +137,82 @@ class Engine:
             strip.off()
             return
 
+        self._refresh_layout()
         self._chase(dt)
 
         pulse = self._pulse(dt)
-        r, g, b, w = palette.rgbw(self._hue, self._warmth)
-
         strip.set_brightness(self._brightness)
         depth = self._breathe_depth
         speed = self._breathe_speed
-        for i in range(self.num_leds):
-            # Phase wraps at 2π so it never grows large enough for float
-            # precision loss to make the breath jerky — it would otherwise
-            # reach ~10^6 radians after a few weeks of uptime.
-            ph = self._phase[i] + speed * dt
-            if ph > 6.283185:
-                ph -= 6.283185
-            self._phase[i] = ph
-            scale = (1.0 + math.sin(ph) * depth) * self._power_level * pulse
-            strip.set(i,
-                      min(255, int(r * scale)),
-                      min(255, int(g * scale)),
-                      min(255, int(b * scale)),
-                      min(255, int(w * scale)))
+
+        cursor = 0
+        for gi in range(self.num_groups):
+            r, g, b, w = palette.rgbw(self._group_pos[gi], self._warmth)
+            end = min(self.num_leds, cursor + self._sizes[gi])
+            for i in range(cursor, end):
+                # Phase wraps at 2π so it never grows large enough for
+                # float precision loss to make the breath jerky — it
+                # would reach ~10^6 radians after weeks of uptime.
+                ph = self._phase[i] + speed * dt
+                if ph > 6.283185:
+                    ph -= 6.283185
+                self._phase[i] = ph
+                scale = ((1.0 + math.sin(ph) * depth)
+                         * self._power_level * pulse)
+                strip.set(i,
+                          min(255, int(r * scale)),
+                          min(255, int(g * scale)),
+                          min(255, int(b * scale)),
+                          min(255, int(w * scale)))
+            cursor = end
+
+        # A short sizes list would leave trailing LEDs showing the last
+        # scene, so the final zone's colour covers anything left over.
+        for i in range(cursor, self.num_leds):
+            strip.set(i, min(255, int(r * self._power_level)),
+                      min(255, int(g * self._power_level)),
+                      min(255, int(b * self._power_level)),
+                      min(255, int(w * self._power_level)))
         strip.show()
 
     # ── Internal ────────────────────────────────────────────
 
+    def _refresh_layout(self):
+        """Recompute zone sizes and targets, but only when they change."""
+        key = self.shared.total_touches(), int(self.shared.position() * 100000)
+        if key == self._layout_key and self._sizes:
+            return
+        self._layout_key = key
+        self._sizes = self.shared.group_sizes(
+            self.num_leds, self.num_groups,
+            self.group_min_leds, self.group_max_leds)
+
     def _chase(self, dt):
-        """Move the displayed colour toward the agreed one, slowly."""
-        target_hue = self.shared.hue()
-        delta = _shortest_delta(self._hue, target_hue)
+        """Move the displayed colour toward the agreed one, slowly.
+
+        Straight-line, not shortest-way-round: palette position is not a
+        circle. 0.0 is warm white and 1.0 is fully saturated, so there is
+        no short cut between them — travelling "the other way" would mean
+        sweeping through every colour to reach the neighbour of white.
+        """
         step = self._hue_rate * dt
+        target_pos = self.shared.position()
+        delta = target_pos - self._hue
         if abs(delta) <= step:
-            self._hue = target_hue
+            self._hue = target_pos
         else:
-            self._hue = (self._hue + (step if delta > 0 else -step)) % 1.0
+            self._hue += step if delta > 0 else -step
+
+        # Every zone drifts toward its own target at the same rate, so
+        # the strip resettles as one rather than one zone racing ahead.
+        for i in range(self.num_groups):
+            want = self.shared.group_position(i, self.num_groups,
+                                              self.group_spread)
+            d = want - self._group_pos[i]
+            if abs(d) <= step:
+                self._group_pos[i] = want
+            else:
+                self._group_pos[i] += step if d > 0 else -step
 
         target_warm = self.shared.warmth()
         d = target_warm - self._warmth

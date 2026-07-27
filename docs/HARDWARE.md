@@ -34,7 +34,31 @@ The touch pad needs **no external resistor** — the ESP32-S3 has hardware
 touch channels. A bare copper pad, a strip of foil, or a screw head all
 work. `TOUCH_PINS = []` if you don't want one.
 
-All pins are set in `config.py`; the defaults above are just defaults.
+All pins are set in `config.py`, which is generated from `.env` — the
+defaults above are just defaults.
+
+### Strip length and zones
+
+Any length works. Put it in `.env`:
+
+```
+NUM_LEDS     = 10      # however many you soldered
+NUM_GROUPS   = 3       # colour zones; 1 for one flat colour
+GROUP_SPREAD = 0.35    # 0 = zones identical, 1 = wildly apart
+```
+
+The strip splits into that many zones, each its own colour, reshuffled on
+every touch. Both lamps derive identical zones from the shared counter,
+so the two strips match even though nothing about the layout is ever
+transmitted — see [PROTOCOL.md](PROTOCOL.md#zones-without-paying-for-them).
+
+The two lamps do **not** need the same strip length. Zones are computed
+from whatever each lamp has, so a 10-LED lamp and a 60-LED lamp show the
+same colours across different numbers of pixels.
+
+Longer strips draw more current: 60 RGBW LEDs at full white is around
+3.5 A, which is well past what USB will give you. Power the strip
+directly from a 5 V supply rather than through the XIAO.
 
 ---
 

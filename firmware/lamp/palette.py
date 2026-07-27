@@ -1,42 +1,58 @@
 # ============================================================
-#  palette.py  —  Hue position to RGBW
+#  palette.py  —  Palette position to RGBW
 # ============================================================
-# Kept in its own module, separate from config.py, deliberately: config.py
-# holds per-lamp secrets and is never overwritten by an update, so a
-# palette living there could never be improved on a lamp already in
-# someone's house. This file can be updated freely.
+# Lifted from linked_friend_lights, deliberately unchanged. A single
+# `pos` sets hue AND saturation together:
+#
+#   pos = 0.0   pure warm white — W channel only, no tint at all
+#   pos = 0.5   halfway round the palette, half saturated
+#   pos = 1.0   the far end of the palette, fully saturated, W gone
+#
+# Coupling them is what makes the lamp read as a lamp. Independent hue
+# and saturation gives you a light that can sit at "fully saturated
+# green", which looks like test equipment; here everything low is warm
+# and only a deliberate push gets you real colour.
+#
+# It is also why a lamp with its counters at zero is warm white, with no
+# special case anywhere: zero IS warm white.
+#
+# In its own module rather than config.py because config.py holds
+# per-lamp secrets and is never overwritten — a palette living there
+# could never be improved on a lamp already in someone's house.
 
-# Warm white is carried almost entirely by the W channel of an SK6812.
 BASE_WARM_WHITE = (0, 0, 0, 200)
 
-# Adjacent entries interpolate, so the wheel is continuous. The last
-# entry wraps back to the first — hue is a circle, and the CRDT counter
-# that drives it wraps too, so the palette must close the loop or a lamp
-# would visibly jump when its counter rolled over.
 TINT_PALETTE = (
-    (255, 200,  80),   # golden yellow
-    (255, 160,   0),   # warm amber
-    (255, 120,   0),   # deep amber
-    (255,  60,   0),   # orange-red
-    (255,   0,   0),   # pure red
-    (255,   0,  60),   # red-pink
-    (255,   0, 140),   # hot pink
-    (200,   0, 200),   # magenta
-    (140,   0, 255),   # violet
-    ( 80,   0, 255),   # indigo
-    (  0,   0, 255),   # pure blue
-    (  0,  60, 255),   # blue
-    (  0, 140, 255),   # sky blue
-    (  0, 200, 255),   # cyan-blue
-    (  0, 255, 220),   # cyan
-    (  0, 255, 160),   # cyan-green
-    (  0, 255,  80),   # green
-    (  0, 220,   0),   # pure green
-    ( 80, 255,   0),   # yellow-green
-    (160, 255,   0),   # lime
-    (220, 255,   0),   # yellow-lime
-    (255, 240,   0),   # yellow
-    (255, 180,  40),   # sunflower
+    (255, 200,  80),   #  0  golden yellow
+    (255, 160,   0),   #  1  warm amber
+    (255, 120,   0),   #  2  deep amber
+    (255,  60,   0),   #  3  orange-red
+    (255,   0,   0),   #  4  pure red
+    (255,   0,  60),   #  5  red-pink
+    (255,   0, 140),   #  6  hot pink
+    (200,   0, 200),   #  7  magenta
+    (140,   0, 255),   #  8  violet
+    ( 80,   0, 255),   #  9  indigo
+    (  0,   0, 255),   # 10  pure blue
+    (  0,  60, 255),   # 11  blue
+    (  0, 140, 255),   # 12  sky blue
+    (  0, 200, 255),   # 13  cyan-blue
+    (  0, 255, 220),   # 14  cyan
+    (  0, 255, 160),   # 15  cyan-green
+    (  0, 255,  80),   # 16  green
+    (  0, 220,   0),   # 17  pure green
+    ( 80, 255,   0),   # 18  yellow-green
+    (160, 255,   0),   # 19  lime
+    (220, 255,   0),   # 20  yellow-lime
+    (255, 240,   0),   # 21  yellow
+    (255, 180,  40),   # 22  sunflower
+    (255, 100,  80),   # 23  coral
+    (255,  80, 160),   # 24  salmon-pink
+    (180,  40, 255),   # 25  purple
+    ( 40, 100, 255),   # 26  periwinkle
+    (  0, 180, 180),   # 27  teal
+    ( 20, 255, 120),   # 28  mint
+    (255, 220, 120),   # 29  pale gold
 )
 
 
@@ -44,28 +60,57 @@ def _lerp(a, b, t):
     return a + (b - a) * t
 
 
-def tint(pos):
-    """RGB tint at wheel position `pos` (0.0-1.0, wrapping)."""
+def tint(position):
+    """The RGB tint at `position`, before saturation is applied."""
     n = len(TINT_PALETTE)
-    scaled = (pos % 1.0) * n          # % n, not n-1: the wheel closes
-    i = int(scaled)
-    frac = scaled - i
-    c1 = TINT_PALETTE[i % n]
-    c2 = TINT_PALETTE[(i + 1) % n]
-    return tuple(int(_lerp(c1[k], c2[k], frac)) for k in range(3))
+    scaled = position * (n - 1)
+    idx = int(scaled)
+    if idx >= n - 1:
+        return TINT_PALETTE[-1]
+    c1, c2 = TINT_PALETTE[idx], TINT_PALETTE[idx + 1]
+    frac = scaled - idx
+    return tuple(int(_lerp(a, b, frac)) for a, b in zip(c1, c2))
 
 
-def rgbw(pos, warmth):
-    """Colour at wheel position `pos`, blended toward warm white.
+def rgbw(position, w_level=1.0):
+    """RGBW at palette `position`, with the W channel scaled by w_level.
 
-    `warmth` 1.0 is pure warm white (W channel only, no tint); 0.0 is the
-    fully saturated hue. The W channel fades out as the tint comes up,
-    otherwise every colour would read as a pale wash.
+    Matches ColourEngine in the original project: the tint is blended in
+    by `sat = position`, and W fades out by the same amount, so the two
+    always trade against each other. `w_level` is the separate per-lamp
+    warm-white trim, applied on top exactly as the original applied it
+    per group.
     """
-    warmth = max(0.0, min(1.0, warmth))
-    sat = 1.0 - warmth
-    r, g, b = tint(pos)
-    return (int(_lerp(BASE_WARM_WHITE[0], r, sat)),
-            int(_lerp(BASE_WARM_WHITE[1], g, sat)),
-            int(_lerp(BASE_WARM_WHITE[2], b, sat)),
-            int(BASE_WARM_WHITE[3] * warmth))
+    position = max(0.0, min(1.0, position))
+    w_level = max(0.0, min(1.0, w_level))
+    tr, tg, tb = tint(position)
+    sat = position
+    return (int(_lerp(BASE_WARM_WHITE[0], tr, sat)),
+            int(_lerp(BASE_WARM_WHITE[1], tg, sat)),
+            int(_lerp(BASE_WARM_WHITE[2], tb, sat)),
+            int(BASE_WARM_WHITE[3] * (1.0 - sat) * w_level))
+
+
+# ── Sunrise gradient ─────────────────────────────────────────
+# Also from the original, and deliberately NOT taken from TINT_PALETTE:
+# there a single position sets hue and saturation together, so anything
+# warm is also nearly white and a dawn would be an invisible tint.
+SUNRISE_STOPS = (
+    (255,  20,   0,   0),   # 0.00  ember red
+    (255,  70,   0,   0),   # 0.33  deep orange
+    (255, 140,  20,  40),   # 0.66  amber, white creeping in
+    (255, 190, 110, 190),   # 1.00  warm white
+)
+
+
+def sunrise(t):
+    """RGBW along the sunrise gradient for t in 0.0-1.0."""
+    t = max(0.0, min(1.0, t))
+    n = len(SUNRISE_STOPS) - 1
+    scaled = t * n
+    i = int(scaled)
+    if i >= n:
+        return SUNRISE_STOPS[-1]
+    a, b = SUNRISE_STOPS[i], SUNRISE_STOPS[i + 1]
+    frac = scaled - i
+    return tuple(int(_lerp(x, y, frac)) for x, y in zip(a, b))

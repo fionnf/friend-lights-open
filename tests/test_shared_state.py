@@ -39,11 +39,10 @@ def gossip(sender, receiver):
 print("\nbasics")
 
 a = SharedColour(1)
-check("starts at hue 0", a.hue() == 0.0, a.hue())
+check("starts at warm white", a.position() == 0.0, a.position())
 
 a.touch()
-check("own touch moves hue",
-      abs(a.hue() - TOUCH_HUE_STEP / COUNTER_MODULO) < 1e-9, a.hue())
+check("own touch moves the palette position", a.position() > 0, a.position())
 check("own touch counts", a.total_touches() == 1, a.total_touches())
 
 check("cannot be spoofed by an echo of ourselves",
@@ -58,8 +57,9 @@ a, b = SharedColour(1), SharedColour(2)
 a.touch(); a.touch()
 b.touch()
 gossip(a, b); gossip(b, a)
-check("both lamps agree after exchange", abs(a.hue() - b.hue()) < 1e-9,
-      "%s vs %s" % (a.hue(), b.hue()))
+check("both lamps agree after exchange",
+      abs(a.position() - b.position()) < 1e-9,
+      "%s vs %s" % (a.position(), b.position()))
 check("touch totals agree", a.total_touches() == b.total_touches() == 3)
 
 
@@ -75,8 +75,8 @@ for u in updates:
     x.apply_remote(*u)
 for u in reversed(updates):
     y.apply_remote(*u)
-check("reversed delivery order converges", x.hue() == y.hue(),
-      "%s vs %s" % (x.hue(), y.hue()))
+check("reversed delivery order converges", x.position() == y.position(),
+      "%s vs %s" % (x.position(), y.position()))
 check("reversed delivery order converges (warmth)", x.warmth() == y.warmth())
 
 
@@ -127,7 +127,7 @@ p.touch(); p.touch(); p.touch()
 q.touch(); q.touch()
 gossip(p, q); gossip(q, p)
 check("both contributions survive", p.total_touches() == 5, p.total_touches())
-check("no lost update", p.hue() == q.hue())
+check("no lost update", p.position() == q.position())
 
 
 # ── Wrapping ─────────────────────────────────────────────────
@@ -135,13 +135,19 @@ check("no lost update", p.hue() == q.hue())
 # it must reverse rather than snap.
 print("\nwrapping")
 
+# Position folds back rather than wrapping: 0.0 is warm white and 1.0 is
+# fully saturated, so a raw wrap would snap from vivid straight to white.
 w = SharedColour(1)
-w.nudge(hue=COUNTER_MODULO - 10)
-before = w.hue()
-w.nudge(hue=20)
-check("hue wraps past the top of the wheel", w.hue() < before,
-      "%s -> %s" % (before, w.hue()))
-check("hue stays in range", 0.0 <= w.hue() < 1.0, w.hue())
+check("a fresh lamp is at warm white", w.position() == 0.0, w.position())
+poss = []
+for _ in range(96):
+    w.nudge(hue=COUNTER_MODULO // 48)
+    poss.append(w.position())
+check("position stays in range", all(0.0 <= p <= 1.0 for p in poss))
+check("position reaches full saturation", max(poss) > 0.99, max(poss))
+check("position comes back to warm white", min(poss[10:]) < 0.05, min(poss[10:]))
+check("position never jumps",
+      max(abs(poss[i] - poss[i-1]) for i in range(1, len(poss))) < 0.1)
 
 warms = []
 v = SharedColour(1)
@@ -151,6 +157,57 @@ for _ in range(64):
 check("warmth stays in range", all(0.0 <= x <= 1.0 for x in warms))
 jumps = [abs(warms[i] - warms[i - 1]) for i in range(1, len(warms))]
 check("warmth never jumps discontinuously", max(jumps) < 0.15, max(jumps))
+
+
+# ── Zones ────────────────────────────────────────────────────
+# The strip splits into zones, each its own colour, as in the original.
+# They are DERIVED from the agreed counter rather than transmitted — so
+# they cost nothing on a link that allows ten messages a day, but they
+# only work if two lamps compute byte-identical results.
+print("\nzones")
+
+za, zb = SharedColour(1), SharedColour(2)
+za.touch(); za.touch(); za.touch()
+gossip(za, zb)
+
+for n in (1, 2, 3, 5, 8):
+    sa = za.group_sizes(10, n)
+    sb = zb.group_sizes(10, n)
+    check("%d zones: both lamps compute the same sizes" % n, sa == sb,
+          "%s vs %s" % (sa, sb))
+    check("%d zones: sizes cover the strip exactly" % n, sum(sa) == 10, sa)
+    check("%d zones: none is empty" % n, all(x >= 1 for x in sa), sa)
+    pa = [round(za.group_position(i, n), 6) for i in range(n)]
+    pb = [round(zb.group_position(i, n), 6) for i in range(n)]
+    check("%d zones: both lamps compute the same colours" % n, pa == pb,
+          "%s vs %s" % (pa, pb))
+    check("%d zones: all in range" % n, all(0.0 <= x <= 1.0 for x in pa), pa)
+
+check("zone 0 is the agreed position, so a slider still means something",
+      za.group_position(0, 4) == za.position())
+
+# A touch must reshuffle the layout, or the strip would only ever slide
+# as one block — the original picked a fresh partition on every impulse.
+before_sizes = za.group_sizes(10, 3)
+before_pos = [za.group_position(i, 3) for i in range(3)]
+layouts = set()
+for _ in range(12):
+    za.touch()
+    layouts.add(tuple(za.group_sizes(10, 3)))
+check("a touch reshuffles the zones", len(layouts) > 3, layouts)
+
+# More zones than LEDs must not produce empty or negative ones.
+tiny = SharedColour(1)
+tiny.touch()
+sizes = tiny.group_sizes(4, 9)
+check("more zones than LEDs is clamped, not broken",
+      sum(sizes) == 4 and all(x >= 1 for x in sizes), sizes)
+
+# Zones must be stable while nothing changes, or the strip would crawl.
+still = SharedColour(1)
+still.touch()
+check("zones are stable between touches",
+      still.group_sizes(10, 3) == still.group_sizes(10, 3))
 
 
 # ── Persistence ──────────────────────────────────────────────
@@ -166,17 +223,17 @@ snap = s.snapshot()
 
 restored = SharedColour(1)
 restored.restore(snap)
-check("survives a reboot", restored.hue() == s.hue())
+check("survives a reboot", restored.position() == s.position())
 check("peer contribution survives", restored.total_touches() == s.total_touches())
 
 json_ish = {k: {str(i): val for i, val in d.items()} for k, d in snap.items()}
 from_json = SharedColour(1)
 from_json.restore(json_ish)
-check("survives JSON string keys", from_json.hue() == s.hue())
+check("survives JSON string keys", from_json.position() == s.position())
 
 junk = SharedColour(1)
 junk.restore({"hue": "not a dict", "nonsense": 5})
-check("corrupt flash does not crash the boot", junk.hue() == 0.0)
+check("corrupt flash does not crash the boot", junk.position() == 0.0)
 
 
 print("\n%d failed" % len(failures) if failures else "\nall passed")

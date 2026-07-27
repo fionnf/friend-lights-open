@@ -128,8 +128,8 @@ def main():
 
     random.seed(args.seed)
     fade_ms = int(args.arrival_fade * 1000)
-    a = Lamp(1, "Zurich", args.leds, fade_ms)
-    b = Lamp(2, "elsewhere", args.leds, fade_ms)
+    a = Lamp(1, "lamp 1", args.leds, fade_ms)
+    b = Lamp(2, "lamp 2", args.leds, fade_ms)
     lamps = {1: a, 2: b}
 
     total_ms = int(args.hours * 3600 * 1000)

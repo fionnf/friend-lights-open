@@ -138,11 +138,12 @@ mpremote connect /dev/ttyACM0 exec "import esp; print(esp.flash_size())"
 
 ## 5. Load the lamp firmware
 
-From the repo root, with `firmware/config.py` already created (see the
-[README](../README.md#5-configure-and-load)):
+From the repo root, once `.env` is filled in and
+`python3 tools/apply_env.py` has been run (see
+[SETUP.md step 5](SETUP.md#5-configure-and-load)):
 
 ```bash
-./tools/deploy.sh /dev/ttyACM0
+./tools/deploy.sh --lamp 1 /dev/ttyACM0
 ```
 
 That runs the test suite first and refuses to deploy if anything fails.
@@ -152,10 +153,12 @@ By hand, if you prefer:
 ```bash
 mpremote connect /dev/ttyACM0 mkdir :lamp
 mpremote connect /dev/ttyACM0 mkdir :lamp/net
+mpremote connect /dev/ttyACM0 mkdir :lamp/www
 mpremote connect /dev/ttyACM0 cp firmware/main.py :
-mpremote connect /dev/ttyACM0 cp firmware/config.py :
+mpremote connect /dev/ttyACM0 cp firmware/config.lamp1.py :config.py
 mpremote connect /dev/ttyACM0 cp firmware/lamp/*.py :lamp/
 mpremote connect /dev/ttyACM0 cp firmware/lamp/net/*.py :lamp/net/
+mpremote connect /dev/ttyACM0 cp firmware/lamp/www/index.html :lamp/www/
 ```
 
 Check what landed:
@@ -176,7 +179,7 @@ mpremote connect /dev/ttyACM0 repl
 Tap **R**. You want:
 
 ```
-[boot] friend-lights-open 2026-07-27.1 — lamp 1 (Zurich)
+[boot] friend-lights-open 2026-07-27.1 — lamp 1 
 [lorawan] joining...
 [lorawan] joined
 ```
@@ -289,6 +292,7 @@ whole board down. Power the strip from 5 V directly, not through the XIAO.
 esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
 ```
 
-Wipes everything including `config.py`. Go back to step 3. There is no
-state on the board worth preserving — the lamp's counters are restored
-from its peers within an hour of rejoining.
+Wipes everything including `config.py`. Go back to step 3, then
+re-deploy — your keys are safe in `.env` on your laptop. There is no
+state on the board worth preserving: the lamp's counters come back from
+its peer at the next heartbeat.

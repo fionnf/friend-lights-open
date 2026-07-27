@@ -358,45 +358,71 @@ something.
 
 ---
 
----
-
 ## 5. Configure and load
 
+Everything secret goes in one file, which git never sees.
+
 ```bash
-python3 tools/make_config.py --lamp 1
+cp .env.example .env
 ```
 
-It asks for the values you copied from TTN, checks them, and writes
-`firmware/config.lamp1.py` (gitignored — keys never enter the repo). Run
-it again with `--lamp 2` for the other one.
+Fill in the six values you collected in step 3, plus how long your strip
+is:
 
-The reason it exists rather than "edit this file": three of the ways to
-get these six values wrong produce a lamp that **joins the network
-perfectly and then does nothing**, with no error anywhere saying why.
+```
+LAMP1_DEV_EUI = 70B3D57ED0......      # from the TTN device page
+LAMP1_APP_KEY = ................      # Join settings, behind the eye
+LAMP2_DEV_EUI = 70B3D57ED0......
+LAMP2_APP_KEY = ................
+JOIN_EUI      = 0011223344556677      # the SAME value on both lamps
 
-| Mistake | What you'd see |
+NUM_LEDS      = 10                    # however many you soldered
+NUM_GROUPS    = 3                     # colour zones; 1 for a flat colour
+```
+
+Then:
+
+```bash
+python3 tools/apply_env.py
+```
+
+That writes `firmware/config.lamp1.py` and `config.lamp2.py`. Both, and
+`.env` itself, are gitignored — **there is no file you have to remember
+not to commit.**
+
+### Why it is generated rather than hand-edited
+
+Three of the ways to get these six values wrong produce a lamp that
+**joins the network perfectly and then does nothing**, with no error
+anywhere saying why:
+
+| Mistake | What you would see |
 |---|---|
 | Both lamps sharing a **DevEUI** | They fight over one session; neither stays joined |
 | Lamps with **different JoinEUIs** | One never joins at all |
-| Both lamps sharing a **`LAMP_ID`** | Both join fine, then ignore each other forever — the CRDT treats a message bearing your own id as an echo of yourself and drops it |
+| Both lamps sharing a **`LAMP_ID`** | Both join fine, then ignore each other forever — the CRDT drops a message bearing your own id as an echo of itself |
 
-So it cross-checks each lamp against the other and refuses to write a
-file that would produce any of those.
+None of those is visible by reading a config file, and all three are what
+you get by copying one lamp's file and editing it — which is exactly what
+anyone would do. So `apply_env.py` refuses to write anything that would
+cause them, along with a missing key or a password WPA2 would silently
+ignore.
 
-To load it:
+### Load it
 
 ```bash
 ./tools/deploy.sh --lamp 1 /dev/ttyACM0
 ```
 
 That runs the whole test suite first and refuses to deploy if anything
-fails — see [the automated tests](TESTING.md#the-automated-tests) for why that guard matters here.
+fails — see [the automated tests](TESTING.md#the-automated-tests) for why
+that guard matters here.
 
-> Prefer to edit by hand? `cp firmware/config.example.py
-> firmware/config.py`, fill it in, and run `./tools/deploy.sh` with no
-> `--lamp`. You lose the cross-checks.
+Repeat with `--lamp 2` for the other board.
 
----
+> Prefer to edit by hand? `firmware/config.example.py` is a fully
+> commented template — copy it to `firmware/config.py`, fill it in, and
+> run `./tools/deploy.sh` with no `--lamp`. You lose the cross-checks.
 
 ---
 
@@ -409,7 +435,7 @@ mpremote connect /dev/ttyACM0 repl
 Tap **R** on the board. You want:
 
 ```
-[boot] friend-lights-open 2026-07-27.1 — lamp 1 (Zurich)
+[boot] friend-lights-open 2026-07-27.1 — lamp 1 
 [lorawan] joining...
 [lorawan] joined
 ```
@@ -423,7 +449,7 @@ The control network is up from boot, before LoRaWAN has even joined:
 
 | | |
 |---|---|
-| Network | `deLENIghted-1-Zurich` — set by `PORTAL_SSID` |
+| Network | `deLENIghted-1` — set by `PORTAL_SSID` |
 | Password | `lightupleni` |
 | Page | opens by itself, or **http://192.168.4.1** |
 

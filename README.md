@@ -30,7 +30,7 @@ from a phone without spending one of its ten daily messages:
 
 | | |
 |---|---|
-| **Network** | `deLENIghted-1-Zurich` / `deLENIghted-2-Cork` |
+| **Network** | `deLENIghted-1` and `deLENIghted-2` |
 | **Password** | `lightupleni` |
 | **Page** | opens by itself, or **http://192.168.4.1** |
 
@@ -49,7 +49,7 @@ not a router. Stay connected anyway.
 | 2 | Flash MicroPython | one USB cable |
 | 3 | Set up The Things Network | free; a glossary comes first |
 | 4 | Deploy the bridge | 40 lines, pasted into Cloudflare |
-| 5 | Configure and load | `./tools/deploy.sh --lamp 1` |
+| 5 | Configure and load | `cp .env.example .env`, fill it in, `tools/apply_env.py` |
 | 6 | First light | |
 
 **Check coverage before you order anything.** Look up both addresses on
@@ -58,6 +58,20 @@ at either end means none of this works, and no antenna will fix it.
 
 You can prove everything except the radio with a laptop while you wait
 for parts — **→ [docs/TESTING.md](docs/TESTING.md)**.
+
+---
+
+## Your keys live in one file
+
+```bash
+cp .env.example .env       # fill in six values from the TTN console
+python3 tools/apply_env.py # writes both lamp configs
+```
+
+`.env` is gitignored, and so are the configs it generates — there is no
+file you have to remember not to commit. It refuses to write anything
+that would produce a broken pair: a shared DevEUI, mismatched JoinEUIs,
+or a password WPA2 would silently ignore.
 
 ---
 
@@ -80,6 +94,17 @@ in it. Both of you push; the light is where you ended up.
 And it arrives *slowly*, over a minute or two. That began as an aesthetic
 choice and turned out to be exactly what ten downlinks a day requires.
 Colour that arrives like post rather than like a text.
+
+### Zones
+
+The strip splits into zones, each its own colour, reshuffled on every
+touch — as in the original project. Set `NUM_LEDS` and `NUM_GROUPS` in
+`.env`; `NUM_GROUPS = 1` gives one flat colour.
+
+They cost **nothing on the wire.** Rather than transmitting a colour per
+zone on a link that allows ten messages a day, both lamps run the same
+small hash over the same agreed counter and arrive at identical stripes.
+Convergence comes free: same counter in, same pattern out.
 
 **→ [docs/PROTOCOL.md](docs/PROTOCOL.md)** for how, and why ten a day
 shaped all of it.
@@ -170,21 +195,30 @@ A phone hotspot counts, on iPhone and Android alike.
 ```
 firmware/
 ├── main.py                 # the loop
-├── config.lamp1.py         # ready to fill in — DevEUI and AppKey only
-├── config.lamp2.py
+├── config.lamp*.py         # generated from .env, never committed
 └── lamp/
     ├── shared_state.py     # the CRDT — the heart of the project
     ├── codec.py            # the 10-byte wire format
     ├── engine.py           # slow arrival, breathing, pulses
-    ├── palette.py  driver.py  touch.py
+    ├── palette.py          # the original project's palette, unchanged
+    ├── driver.py  touch.py
     ├── portal.py           # the control network + page
     ├── www/index.html
     └── net/                # transport.py, lorawan_e5.py, mqtt_wifi.py
 bridge/worker.js            # uplink -> the other lamp's downlink
-tools/                      # deploy, simulate, test the bridge
+.env                        # every secret, in one gitignored file
 tests/                      # five suites, no dependencies
 docs/
 ```
+
+| Tool | |
+|---|---|
+| `tools/apply_env.py` | write both lamp configs from `.env` |
+| `tools/deploy.sh --lamp N` | test, then load a lamp |
+| `tools/preview_portal.py` | the lamp's page, on your laptop |
+| `tools/simulate.py` | two lamps over a week, in your terminal |
+| `tools/test_bridge.py` | prove the Cloudflare bridge works |
+| `tools/run_bridge_locally.mjs` | run the bridge offline |
 
 | Doc | |
 |---|---|
@@ -201,6 +235,13 @@ docs/
 
 ```bash
 for t in tests/test_*.py; do python3 "$t"; done
+```
+
+Or see everything working before the parts arrive:
+
+```bash
+python3 tools/preview_portal.py --lamps 2   # the page, on your laptop
+python3 tools/simulate.py --hours 168       # a week of two lamps
 ```
 
 No dependencies, no runner. `tools/deploy.sh` runs them and refuses to

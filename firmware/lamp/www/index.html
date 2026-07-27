@@ -1,185 +1,318 @@
 <!DOCTYPE html>
 <!--
-  Served from the lamp's own flash over its own access point.
+  Served from the lamp's own flash, over the lamp's own WiFi.
 
-  Everything is inline and there are no external requests of any kind:
-  no fonts, no CDN, no favicon. A phone connected to this AP has NO
-  INTERNET, so a single external reference would hang the page load.
+  Everything is inline and there are NO external requests of any kind:
+  no fonts, no CDN, no favicon, no analytics. A phone connected to this
+  network has no internet, so a single external reference would hang the
+  page load behind a DNS timeout. There is a test asserting this.
+
+  Preview it on a laptop with:  python3 tools/preview_portal.py
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1014">
 <title>Lamp</title>
 <style>
-  :root { color-scheme: dark light; }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    margin: 0; padding: 1.25rem 1rem 3rem;
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #14151a; color: #e9e9ee;
-    max-width: 32rem; margin-inline: auto;
+  :root{
+    --bg:#0f1014; --card:#191b22; --line:rgba(255,255,255,.08);
+    --fg:#eceef4; --dim:#8b8f9c; --accent:#f0a860;
   }
-  @media (prefers-color-scheme: light) {
-    body { background: #f6f6f8; color: #1a1a1f; }
-    .card { background: #fff; border-color: rgba(0,0,0,.08); }
-    button.sec { background: #fff; }
-    input, select { background: #fff; color: #1a1a1f; }
+  @media (prefers-color-scheme:light){
+    :root{ --bg:#f4f4f7; --card:#fff; --line:rgba(0,0,0,.08);
+           --fg:#16171c; --dim:#6b7080; }
   }
-  h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; opacity: .6; letter-spacing: .02em; }
-  .card {
-    background: #1d1e25; border: 1px solid rgba(255,255,255,.07);
-    border-radius: 14px; padding: 1rem; margin-bottom: .85rem;
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;padding:1.5rem 1.1rem 3.5rem;background:var(--bg);color:var(--fg);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    max-width:30rem;margin-inline:auto;
   }
-  #swatch {
-    height: 8rem; border-radius: 12px; margin-bottom: .85rem;
-    transition: background-color .6s ease;
-    box-shadow: inset 0 0 60px rgba(0,0,0,.25);
+
+  header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:1.1rem}
+  h1{font-size:1.15rem;font-weight:650;margin:0;letter-spacing:-.01em}
+  .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--dim);
+       margin-left:auto;transition:background .3s}
+  .dot.live{background:#4ec97a;box-shadow:0 0 8px #4ec97a}
+
+  .card{background:var(--card);border:1px solid var(--line);
+        border-radius:18px;padding:1.15rem;margin-bottom:.9rem}
+
+  /* ── The strip ── */
+  #stage{display:flex;justify-content:center;gap:.4rem;padding:1.6rem 0 1.9rem}
+  .led{width:1.5rem;height:1.5rem;border-radius:50%;
+       transition:background-color .7s ease, box-shadow .7s ease}
+  #off-note{text-align:center;color:var(--dim);font-size:.85rem;
+            margin:-1rem 0 .6rem;height:1.2rem}
+
+  /* ── Controls ── */
+  .row{display:flex;gap:.6rem}
+  button{
+    flex:1;padding:1.05rem 1rem;font:inherit;font-weight:620;
+    border-radius:14px;border:1px solid transparent;cursor:pointer;
+    color:#191b22;background:var(--accent);transition:transform .08s, filter .2s;
   }
-  .row { display: flex; gap: .6rem; }
-  button {
-    flex: 1; padding: .95rem 1rem; font-size: 1rem; font-weight: 600;
-    border-radius: 11px; border: 1px solid transparent; cursor: pointer;
-    color: #fff; background: #4f7cff; font-family: inherit;
+  button.sec{background:transparent;color:var(--fg);border-color:var(--line)}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.45;cursor:default}
+
+  label{display:flex;justify-content:space-between;align-items:baseline;
+        font-size:.82rem;color:var(--dim);margin:1.25rem 0 .45rem}
+  label b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+
+  input[type=range]{
+    width:100%;height:2.2rem;margin:0;background:transparent;
+    -webkit-appearance:none;appearance:none;
   }
-  button.sec { background: #262832; color: inherit; border-color: rgba(255,255,255,.1); }
-  button:active { transform: scale(.98); }
-  button[disabled] { opacity: .5; }
-  label { display: block; font-size: .8rem; opacity: .6; margin: .9rem 0 .35rem; }
-  input[type=range] { width: 100%; accent-color: #4f7cff; }
-  input[type=text], input[type=password] {
-    width: 100%; padding: .6rem .7rem; font-size: .95rem; font-family: ui-monospace, monospace;
-    border-radius: 8px; border: 1px solid rgba(128,128,128,.35);
-    background: #262832; color: inherit;
-  }
-  .muted { font-size: .8rem; opacity: .55; }
-  summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
-  #toast {
-    position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
-    background: #2c2e39; color: #fff; padding: .6rem 1rem; border-radius: 10px;
-    font-size: .85rem; opacity: 0; transition: opacity .25s; pointer-events: none;
-  }
-  #toast.show { opacity: 1; }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:.55rem;border-radius:999px;background:var(--track,var(--line))}
+  input[type=range]::-moz-range-track{
+    height:.55rem;border-radius:999px;background:var(--track,var(--line))}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:1.7rem;height:1.7rem;border-radius:50%;
+    background:#fff;border:2px solid rgba(0,0,0,.18);margin-top:-.58rem;
+    box-shadow:0 1px 5px rgba(0,0,0,.35)}
+  input[type=range]::-moz-range-thumb{
+    width:1.6rem;height:1.6rem;border-radius:50%;background:#fff;
+    border:2px solid rgba(0,0,0,.18);box-shadow:0 1px 5px rgba(0,0,0,.35)}
+  #hue{--track:linear-gradient(90deg,rgb(200,164,110),rgb(201,162,105),rgb(204,157,100),rgb(206,145,96),rgb(208,136,99),rgb(210,129,115),rgb(196,122,135),rgb(173,115,151),rgb(141,109,158),rgb(125,121,163),rgb(116,155,169),rgb(108,187,170),rgb(100,209,150),rgb(91,212,105),rgb(83,197,48),rgb(131,220,41),rgb(185,224,36),rgb(226,221,31),rgb(241,187,49),rgb(242,114,83),rgb(234,87,163),rgb(136,74,236),rgb(30,146,201),rgb(22,235,130),rgb(255,220,120))}
+
+  .stat{display:flex;justify-content:space-between;font-size:.85rem;
+        color:var(--dim);padding:.3rem 0}
+  .stat b{color:var(--fg);font-weight:600}
+
+  summary{cursor:pointer;font-weight:600;font-size:.92rem;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"  ▾";color:var(--dim)}
+  details[open] summary::after{content:"  ▴"}
+  input[type=text],input[type=password]{
+    width:100%;padding:.7rem .8rem;font-size:.95rem;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    border-radius:10px;border:1px solid var(--line);
+    background:var(--bg);color:var(--fg)}
+  .hint{font-size:.8rem;color:var(--dim);margin:.9rem 0 0}
+
+  #toast{position:fixed;left:50%;bottom:1.4rem;transform:translate(-50%,1rem);
+         background:var(--fg);color:var(--bg);padding:.65rem 1.1rem;
+         border-radius:12px;font-size:.85rem;font-weight:600;opacity:0;
+         transition:opacity .22s,transform .22s;pointer-events:none}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
 </style>
 </head>
 <body>
 
-<h1>Lamp <span id="id"></span></h1>
+<header>
+  <h1 id="title">Lamp</h1>
+  <span class="dot" id="dot"></span>
+</header>
 
 <div class="card">
-  <div id="swatch"></div>
+  <div id="stage"></div>
+  <div id="off-note"></div>
+
   <div class="row">
     <button id="tap">Touch</button>
     <button id="power" class="sec">Power</button>
   </div>
-  <label>Brightness <span id="brv" class="muted"></span></label>
+
+  <label>Colour <b id="huev"></b></label>
+  <input type="range" id="hue" min="0" max="999" value="0">
+
+  <label>Warmth <b id="warmv"></b></label>
+  <input type="range" id="warm" min="0" max="100" value="100">
+
+  <label>Brightness <b id="brv"></b></label>
   <input type="range" id="br" min="0" max="100" value="60">
-  <p class="muted" id="touches"></p>
+</div>
+
+<div class="card">
+  <div class="stat"><span>Touches shared</span><b id="touches">–</b></div>
+  <div class="stat"><span>Zones</span><b id="zones">–</b></div>
+  <div class="stat"><span>This lamp</span><b id="lampid">–</b></div>
+  <p class="hint">
+    Changes here are instant and free — they don't use the lamp's ten
+    daily messages. Your friend's lamp sees them next time this one
+    transmits.
+  </p>
 </div>
 
 <div class="card">
   <details>
     <summary>Setup</summary>
-    <p class="muted" style="margin-top:.8rem">
-      Paste from the TTN console. Saved to the lamp; it restarts to apply.
-    </p>
-    <label>Lamp ID (1 or 2 — must differ between lamps)</label>
+    <p class="hint">From the TTN console. Saved to the lamp, which then restarts.</p>
+
+    <label style="margin-top:1rem">Lamp number <b>1 or 2</b></label>
     <input type="text" id="lamp_id" inputmode="numeric" placeholder="1">
-    <label>DevEUI</label>
-    <input type="text" id="dev_eui" placeholder="16 hex characters">
-    <label>JoinEUI / AppEUI</label>
-    <input type="text" id="app_eui" placeholder="0000000000000000">
-    <label>AppKey</label>
-    <input type="password" id="app_key" placeholder="32 hex characters">
-    <label style="margin-top:1.2rem">WiFi network (optional)</label>
-    <input type="text" id="wifi_ssid" placeholder="leave blank to use LoRa only">
+
+    <label>DevEUI <b>16 hex</b></label>
+    <input type="text" id="dev_eui" autocapitalize="characters" spellcheck="false">
+
+    <label>JoinEUI <b>same on both lamps</b></label>
+    <input type="text" id="app_eui" autocapitalize="characters" spellcheck="false">
+
+    <label>AppKey <b>32 hex</b></label>
+    <input type="password" id="app_key" spellcheck="false">
+
+    <label style="margin-top:1.4rem">WiFi network <b>optional</b></label>
+    <input type="text" id="wifi_ssid" placeholder="leave blank for LoRa only">
+
     <label>WiFi password</label>
     <input type="password" id="wifi_pass">
-    <div class="row" style="margin-top:1rem">
+
+    <div class="row" style="margin-top:1.1rem">
       <button id="save">Save &amp; restart</button>
     </div>
   </details>
 </div>
 
-<p class="muted">
-  This page is served by the lamp itself. Changes here are instant and
-  free — they don't use the lamp's ten daily messages. Your friend's lamp
-  will see them next time it hears from this one.
-</p>
-
 <div id="toast"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let busy = false, dragging = false;
+let NUM_LEDS = 10;
+let dragging = null, pending = 0, lastHue = 0, lastWarm = 1;
+let lastState = { on: true, groups: [0], sizes: [10] };
+
+// The strip length comes from the lamp, so the page matches whatever
+// you actually soldered rather than assuming ten.
+function buildStrip(n) {
+  if (n === NUM_LEDS && $("stage").children.length) return;
+  NUM_LEDS = n;
+  $("stage").innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement("div");
+    d.className = "led";
+    if (n > 16) { d.style.width = d.style.height = "1rem"; }
+    $("stage").appendChild(d);
+  }
+}
+buildStrip(NUM_LEDS);
 
 function toast(msg) {
   const t = $("toast");
   t.textContent = msg; t.classList.add("show");
-  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800);
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1700);
 }
 
-// Mirrors palette.py closely enough for a preview. The lamp is the
-// authority; this is only so the swatch looks approximately right.
-const STOPS = [
-  [255,200,80],[255,160,0],[255,120,0],[255,60,0],[255,0,0],[255,0,60],
-  [255,0,140],[200,0,200],[140,0,255],[80,0,255],[0,0,255],[0,60,255],
-  [0,140,255],[0,200,255],[0,255,220],[0,255,160],[0,255,80],[0,220,0],
-  [80,255,0],[160,255,0],[220,255,0],[255,240,0],[255,180,40]
-];
-function css(hue, warmth, bright) {
-  const n = STOPS.length, s = ((hue % 1) + 1) % 1 * n, i = Math.floor(s), f = s - i;
-  const a = STOPS[i % n], b = STOPS[(i + 1) % n];
-  const sat = 1 - warmth;
-  const mix = k => Math.round((a[k] + (b[k] - a[k]) * f) * sat + [255, 190, 120][k] * warmth);
-  const v = Math.max(0.15, bright);
-  return `rgb(${Math.round(mix(0)*v)},${Math.round(mix(1)*v)},${Math.round(mix(2)*v)})`;
+// Mirrors palette.py exactly — one `pos` sets hue AND saturation, so
+// 0 is pure warm white and 1 is fully saturated. The lamp is the
+// authority; this only has to look right.
+const BASE_W = 200;
+const STOPS = [[255,200,80],[255,160,0],[255,120,0],[255,60,0],[255,0,0],[255,0,60],[255,0,140],[200,0,200],[140,0,255],[80,0,255],[0,0,255],[0,60,255],[0,140,255],[0,200,255],[0,255,220],[0,255,160],[0,255,80],[0,220,0],[80,255,0],[160,255,0],[220,255,0],[255,240,0],[255,180,40],[255,100,80],[255,80,160],[180,40,255],[40,100,255],[0,180,180],[20,255,120],[255,220,120]];
+function rgbw(pos, wLevel) {
+  pos = Math.max(0, Math.min(1, pos));
+  const n = STOPS.length, scaled = pos * (n - 1);
+  let i = Math.floor(scaled), t;
+  if (i >= n - 1) { t = STOPS[n - 1]; }
+  else {
+    const f = scaled - i, a = STOPS[i], b = STOPS[i + 1];
+    t = [0, 1, 2].map(k => a[k] + (b[k] - a[k]) * f);
+  }
+  return [t[0] * pos, t[1] * pos, t[2] * pos,
+          BASE_W * (1 - pos) * wLevel];
+}
+function css(pos, wLevel, bright, boost) {
+  const [r, g, b, w] = rgbw(pos, wLevel);
+  const v = Math.max(0.12, bright) * (boost || 1);
+  return `rgb(${Math.min(255,(r+w)*v)|0},${Math.min(255,(g+w*0.82)*v)|0},${Math.min(255,(b+w*0.55)*v)|0})`;
 }
 
 async function api(path, body) {
-  const opt = body ? { method: "POST", body: JSON.stringify(body) } : {};
-  const r = await fetch(path, opt);
+  const r = await fetch(path, body
+    ? { method: "POST", body: JSON.stringify(body) } : {});
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
 
+function paint(s) {
+  const on = s.on;
+  const leds = [...document.querySelectorAll(".led")];
+  // One colour per zone, spread across the sizes the lamp reports. The
+  // page never recomputes the zones itself — the lamp is the authority,
+  // and two implementations of the same hash is one too many.
+  const groups = s.groups && s.groups.length ? s.groups : [s.hue];
+  const sizes = s.sizes && s.sizes.length ? s.sizes : [leds.length];
+  let gi = 0, left = sizes[0];
+  leds.forEach((el, i) => {
+    while (left <= 0 && gi < sizes.length - 1) { gi++; left = sizes[gi]; }
+    left--;
+    const pos = groups[Math.min(gi, groups.length - 1)];
+    const b = on ? s.brightness * (0.88 + 0.12 * Math.sin(i * 0.9)) : 0;
+    el.style.backgroundColor = on ? css(pos, s.warmth, b) : "#24262e";
+    el.style.boxShadow = on ? `0 0 14px ${css(pos, s.warmth, b * 0.7)}` : "none";
+  });
+  $("off-note").textContent = on ? "" : "off";
+}
+
 function render(s) {
-  $("id").textContent = "#" + s.lamp_id;
-  $("swatch").style.backgroundColor = s.on ? css(s.hue, s.warmth, s.brightness) : "#23242c";
+  lastHue = s.hue; lastWarm = s.warmth;
+  if (s.leds) buildStrip(s.leds);
+  lastState = s;
+  $("title").textContent = s.name || "Lamp";
+  $("lampid").textContent = "#" + s.lamp_id;
+  $("touches").textContent = s.touches;
+  $("zones").textContent = (s.sizes || []).join(" · ") || "1";
   $("power").textContent = s.on ? "Turn off" : "Turn on";
-  $("touches").textContent = s.touches + " touches shared with your friend";
-  if (!dragging) { $("br").value = Math.round(s.brightness * 100); }
-  $("brv").textContent = Math.round(s.brightness * 100) + "%";
+  paint(s);
+  if (dragging !== "hue")  $("hue").value  = Math.round(s.hue * 999);
+  if (dragging !== "warm") $("warm").value = Math.round(s.warmth * 100);
+  if (dragging !== "br")   $("br").value   = Math.round(s.brightness * 100);
+  $("huev").textContent  = Math.round(s.hue * 100) + "%";
+  $("warmv").textContent = Math.round(s.warmth * 100) + "%";
+  $("brv").textContent   = Math.round(s.brightness * 100) + "%";
+  $("dot").classList.add("live");
 }
 
 async function refresh() {
-  if (busy) return;
-  try { render(await api("/state")); } catch (e) { /* lamp busy rendering */ }
+  if (pending) return;
+  try { render(await api("/state")); }
+  catch (e) { $("dot").classList.remove("live"); }
 }
 
-$("tap").onclick = async () => {
-  busy = true;
-  try { await api("/touch", {}); toast("Colour nudged"); }
+async function send(path, body, note) {
+  pending++;
+  try { await api(path, body); if (note) toast(note); }
   catch (e) { toast("Lamp didn't answer"); }
-  busy = false; refresh();
-};
+  pending--;
+  refresh();
+}
 
-$("power").onclick = async () => {
-  busy = true;
-  const on = $("power").textContent.startsWith("Turn on");
-  try { await api("/set", { on }); } catch (e) { toast("Lamp didn't answer"); }
-  busy = false; refresh();
-};
+$("tap").onclick   = () => send("/touch", {}, "Nudged");
+$("power").onclick = () =>
+  send("/set", { on: $("power").textContent.startsWith("Turn on") });
 
-$("br").oninput = () => {
-  dragging = true;
-  $("brv").textContent = $("br").value + "%";
-};
-$("br").onchange = async () => {
-  try { await api("/set", { brightness: $("br").value / 100 }); }
-  catch (e) { toast("Lamp didn't answer"); }
-  dragging = false; refresh();
-};
+// The lamp has no "set the hue to X" — the CRDT only adds. So send the
+// difference between where the slider is and where the lamp is, and the
+// lamp adds that. A slider that stays convergent.
+function preview() {
+  // While dragging, show the whole strip at the chosen colour: the zone
+  // offsets only settle once the lamp has the new counter.
+  paint({ on: true, hue: $("hue").value / 999, groups: null, sizes: null,
+          warmth: $("warm").value / 100, brightness: $("br").value / 100 });
+  $("huev").textContent  = Math.round($("hue").value / 999 * 100) + "%";
+  $("warmv").textContent = $("warm").value + "%";
+  $("brv").textContent   = $("br").value + "%";
+}
+for (const id of ["hue", "warm", "br"]) {
+  $(id).addEventListener("input", () => { dragging = id; preview(); });
+}
+$("hue").addEventListener("change", () => {
+  // Absolute. The lamp converts it to the increment that lands there —
+  // the page does not need to know how the counters are shaped.
+  dragging = null;
+  send("/set", { pos_target: $("hue").value / 999 });
+});
+$("warm").addEventListener("change", () => {
+  dragging = null;
+  send("/set", { warm_delta: ($("warm").value / 100 - lastWarm) * 0.5 });
+});
+$("br").addEventListener("change", () => {
+  dragging = null;
+  send("/set", { brightness: $("br").value / 100 });
+});
 
 $("save").onclick = async () => {
   const cfg = {};
@@ -187,7 +320,7 @@ $("save").onclick = async () => {
     const v = $(k).value.trim();
     if (v) cfg[k] = v;
   }
-  if (!Object.keys(cfg).length) { toast("Nothing to save"); return; }
+  if (!Object.keys(cfg).length) return toast("Nothing to save");
   $("save").disabled = true;
   try {
     const r = await api("/config", cfg);

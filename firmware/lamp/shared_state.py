@@ -49,6 +49,21 @@ def _wrap(n):
     return int(n) % COUNTER_MODULO
 
 
+def _mix(seed, salt):
+    """A small deterministic hash to 0.0-1.0.
+
+    Both lamps must compute byte-identical results from the same inputs,
+    so this cannot use urandom, the clock, or anything else that differs
+    between two devices. Integer ops only, masked to 32 bits so
+    MicroPython and CPython agree.
+    """
+    x = (int(seed) * 2654435761 + int(salt) * 2246822519) & 0xFFFFFFFF
+    x ^= x >> 13
+    x = (x * 1274126177) & 0xFFFFFFFF
+    x ^= x >> 16
+    return x / 4294967296.0
+
+
 def _triangle(counter):
     """Map a wrapping counter to 0.0-1.0 and back again.
 
@@ -145,21 +160,117 @@ class SharedColour:
             self.peer_brightness[lamp_id] = float(brightness)
         return changed
 
+    # ── Groups ──────────────────────────────────────────────
+    # The original project splits the strip into zones, each its own
+    # colour, with sizes reshuffled on every touch. Sending all that
+    # would need a byte or three per group on a link that allows ten
+    # messages a day.
+    #
+    # So it is DERIVED instead. Both lamps run the same tiny hash over
+    # the same agreed counter, so they compute identical zones without a
+    # single extra byte on the wire. Convergence comes for free: same
+    # counter in, same stripe pattern out.
+
+    def group_position(self, index, count, spread=0.35):
+        """Palette position for one zone.
+
+        Zone 0 is the agreed position exactly, so a slider on the page
+        still means what it says. The rest sit around it by a fixed
+        offset that reshuffles whenever the counter moves — which is what
+        makes a touch feel like the original's impulse() rather than the
+        whole strip sliding as one.
+        """
+        base = self.position()
+        if count <= 1 or index <= 0:
+            return base
+        seed = _wrap(sum(self._hue.values()))
+        off = (_mix(seed, index) - 0.5) * spread
+        return max(0.0, min(1.0, base + off))
+
+    def group_sizes(self, num_leds, count, min_leds=1, max_leds=8):
+        """How many LEDs each zone covers. Always sums to num_leds.
+
+        Deterministic from the same counter, so both lamps show the same
+        stripes, and reshuffled on a touch exactly as the original did.
+        """
+        count = max(1, min(int(count), int(num_leds)))
+        if count == 1:
+            return [num_leds]
+        seed = _wrap(sum(self._hue.values()))
+        sizes, remaining = [], num_leds
+        for i in range(count):
+            left = count - i
+            lo = max(min_leds, remaining - (left - 1) * max_leds)
+            hi = min(max_leds, remaining - (left - 1) * min_leds)
+            if left == 1 or lo >= hi:
+                size = max(lo, min(hi, remaining - (left - 1) * min_leds))
+            else:
+                size = lo + int(_mix(seed, 100 + i) * (hi - lo + 1))
+                size = max(lo, min(hi, size))
+            sizes.append(size)
+            remaining -= size
+        # Rounding can leave a LED over; the last zone absorbs it so no
+        # LED is ever left showing a stale colour from the last scene.
+        sizes[-1] += remaining
+        return sizes
+
     # ── Derived colour ──────────────────────────────────────
 
-    def hue(self):
-        """Agreed palette position, 0.0-1.0, wrapping around the wheel."""
-        return _wrap(sum(self._hue.values())) / COUNTER_MODULO
+    def position(self):
+        """Agreed palette position, 0.0-1.0. See palette.py.
+
+        A triangle rather than a raw wrap. In the original project `pos`
+        couples hue and saturation, so 0.0 is pure warm white and 1.0 is
+        fully saturated — the two ends are nothing alike, and a wrapping
+        counter would snap from vivid straight back to white. Folding it
+        back instead keeps the counter monotonic (so it still converges)
+        while the light only ever drifts.
+
+        It also means a lamp whose counters are zero — brand new, or just
+        restored from nothing — is warm white, with no special case.
+        """
+        return _triangle(sum(self._hue.values()))
+
+    # The colour engine and the page both called this `hue` first.
+    hue = position
 
     def warmth(self):
-        """Agreed warm-white level, 0.0-1.0, oscillating not wrapping."""
-        return _triangle(sum(self._warm.values()))
+        """The warm-white trim, 0.0-1.0 — the original's per-group `w`.
+
+        Inverted so a counter of zero means 1.0, i.e. full warm white.
+        Seeding the counter instead would not work: both lamps would seed
+        the same value, and two half-turns sum to a whole one, landing
+        straight back on zero.
+        """
+        return 1.0 - _triangle(sum(self._warm.values()))
 
     def total_touches(self):
         """Every touch by every lamp. Drives the 'while you were out'
         playback — the difference between two readings is how many times
         someone reached for their lamp since you last looked."""
         return _wrap(sum(self._touch.values()))
+
+    def delta_to_position(self, target):
+        """The increment that would put position() at `target`.
+
+        The page can only ask for "make it this colour", but the CRDT can
+        only ever ADD. Because position is a triangle, two different sums
+        give the same position — one on the way up, one on the way down —
+        so this picks whichever is the shorter move from where we are.
+        Anything else would make the slider lurch the long way round.
+        """
+        target = max(0.0, min(1.0, float(target)))
+        current = _wrap(sum(self._hue.values()))
+        up = int(target * HALF_MODULO)                 # ascending branch
+        down = _wrap(COUNTER_MODULO - up)              # descending branch
+        best = None
+        for candidate in (up, down):
+            d = _wrap(candidate - current)
+            if d > HALF_MODULO:
+                d -= COUNTER_MODULO                    # shorter going back
+            if best is None or abs(d) < abs(best):
+                best = d
+        return best
 
     # ── Wire helpers ────────────────────────────────────────
 

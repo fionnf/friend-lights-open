@@ -324,7 +324,11 @@ def main():
                     brightness=brightness,
                     arrival_fade_ms=_cfg("ARRIVAL_FADE_MS", 90_000),
                     breathe_speed=_cfg("BREATHE_SPEED", 0.0008),
-                    breathe_depth=_cfg("BREATHE_DEPTH", 0.04))
+                    breathe_depth=_cfg("BREATHE_DEPTH", 0.04),
+                    num_groups=_cfg("NUM_GROUPS", 3),
+                    group_min_leds=_cfg("GROUP_MIN_LEDS", 1),
+                    group_max_leds=_cfg("GROUP_MAX_LEDS", 8),
+                    group_spread=_cfg("GROUP_SPREAD", 0.35))
     engine.set_power(on)
     if not on:
         engine._power_level = 0.0      # instant off, no fade-in at boot

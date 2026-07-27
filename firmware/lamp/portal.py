@@ -274,6 +274,8 @@ class Portal:
             return
 
         if method == "GET" and path == "/state":
+            n = getattr(self.engine, "num_groups", 1)
+            spread = getattr(self.engine, "group_spread", 0.35)
             self._json(conn, {
                 "lamp_id": self.lamp_id,
                 "hue": round(self.shared.hue(), 4),
@@ -281,6 +283,15 @@ class Portal:
                 "touches": self.shared.total_touches(),
                 "brightness": round(self.engine.brightness, 3),
                 "on": self.engine.is_on,
+                "leds": getattr(self.engine, "num_leds", 10),
+                # Zones are derived, not stored, so the page is told the
+                # result rather than made to reimplement the hash.
+                "groups": [round(self.shared.group_position(i, n, spread), 4)
+                           for i in range(n)],
+                "sizes": self.shared.group_sizes(
+                    getattr(self.engine, "num_leds", 10), n,
+                    getattr(self.engine, "group_min_leds", 1),
+                    getattr(self.engine, "group_max_leds", 8)),
             })
             return
 
@@ -308,6 +319,35 @@ class Portal:
                         pass
                 if "on" in data:
                     self.engine.set_power(bool(data["on"]))
+                # An absolute palette position, 0-1. The CRDT cannot be
+                # set, only added to, so the lamp works out the increment
+                # that lands there — the page must not have to know how
+                # the counters are shaped.
+                if "pos_target" in data:
+                    try:
+                        want = float(data["pos_target"])
+                    except (TypeError, ValueError):
+                        want = None
+                    if want is not None:
+                        self.shared.nudge(
+                            hue=self.shared.delta_to_position(want))
+
+                # A relative move, in turns of the colour wheel. The
+                # CRDT only knows how to ADD to a counter — there is no
+                # "set the hue to X" — so the page sends the difference
+                # it wants applied and the lamp adds it. That keeps a
+                # slider working without breaking convergence.
+                for field, key, scale in (("hue_delta", "hue", 65536),
+                                          ("warm_delta", "warm", 65536)):
+                    if field in data:
+                        try:
+                            turns = float(data[field])
+                        except (TypeError, ValueError):
+                            continue
+                        # Half a turn either way is the furthest any
+                        # single move can mean on a circle.
+                        turns = max(-0.5, min(0.5, turns))
+                        self.shared.nudge(**{key: int(turns * scale)})
                 if "hue_steps" in data:
                     try:
                         # Clamped: the access point is open, so anything
