@@ -22,6 +22,7 @@ hotspot, no monthly bill. About **€35 a lamp**, once.
 - [The idea](#the-idea)
 - [How it actually works](#how-it-actually-works)
 - [What you need](#what-you-need)
+- [Never used TTN? start here](#3-set-up-the-things-network)
 - [1. Build the lamp](#1-build-the-lamp)
 - [2. Flash MicroPython](#2-flash-micropython)
 - [3. Set up The Things Network](#3-set-up-the-things-network)
@@ -118,6 +119,26 @@ then cross-check with **TTN Mapper**, which shows *measured* coverage
 rather than claimed gateway locations. If either end has no gateway, none
 of this works and no antenna will fix it.
 
+### Two free accounts
+
+Both free, neither wants a card:
+
+- **[The Things Network](https://console.cloud.thethings.network)** — the radio network
+- **[Cloudflare](https://dash.cloudflare.com)** — runs the 40-line bridge that connects the two lamps
+
+### Values you'll collect along the way
+
+Keep a scratch file. By the end of setup you'll have:
+
+| From | What |
+|---|---|
+| TTN, lamp 1 | DevEUI, JoinEUI, AppKey |
+| TTN, lamp 2 | DevEUI, JoinEUI, AppKey |
+| Cloudflare | your worker URL |
+| you | a shared secret you invent |
+
+Only the six TTN values go on the lamps. The rest stays in the browser.
+
 ---
 
 ## 1. Build the lamp
@@ -188,102 +209,209 @@ it, which is the whole reason for choosing it over a bare SX1262.
 
 ## 3. Set up The Things Network
 
-Go to the [TTN console](https://console.cloud.thethings.network) and pick
-the **eu1 (Europe)** cluster. It's free; the Sandbox plan is what you
-want.
+**Never used TTN before? Read this box first — it's five minutes and the
+rest will make sense.**
 
-### 3a. Create one application
+> **Gateway** — someone else's box on a rooftop, listening for LoRa
+> radio. You don't own one, you don't configure one, and your lamp
+> doesn't know which one it's using. It just shouts, and whichever
+> gateway hears it forwards the message over *its owner's* internet.
+> That's the trick that means your home doesn't need internet.
+>
+> **Application** — a folder in your TTN account. Both lamps live in one.
+>
+> **End device** — one lamp. You'll register two.
+>
+> **Uplink** — lamp → network. Cheap; you get ~150/day.
+> **Downlink** — network → lamp. **Only 10 a day.** This is the limit that
+> matters.
+>
+> **OTAA** — how a lamp proves who it is when it joins, using three
+> secrets you'll copy out of the console:
+> **DevEUI** (the lamp's serial number), **JoinEUI** (which server to
+> join — all zeros is fine), and **AppKey** (the actual secret).
+>
+> **It is free.** No card, no trial. The plan is called *Sandbox*.
 
-**Applications → Create application.** ID something like
-`friend-lights`. Both lamps go in this one application — not because TTN
-routes between them (it doesn't), but so the bridge has a single webhook
-and API key to work with.
+### 3a. Make an account
 
-### 3b. Register each lamp
+Go to **[console.cloud.thethings.network](https://console.cloud.thethings.network)**
+and sign up.
 
-**End devices → Register end device → Enter end device specifics
-manually.**
+You'll be asked to choose a **cluster** — a regional server. Pick
+**Europe 1 (eu1)** if you're in Europe. This must be the *same* cluster
+for both lamps, so whatever you pick, write it down.
 
-| Field | Value |
+### 3b. Create one application
+
+Click **Applications → + Create application**.
+
+| Field | What to put |
 |---|---|
-| Frequency plan | **Europe 863–870 MHz (SF9 for RX2 — recommended)** |
-| LoRaWAN version | **LoRaWAN Specification 1.0.3** |
-| Regional Parameters | **RP001 Regional Parameters 1.0.3 revision A** |
-| Activation mode | **Over the air activation (OTAA)** |
-| JoinEUI / AppEUI | all zeros is fine: `0000000000000000` |
+| Application ID | `friend-lights` |
+| Name | anything, or leave blank |
+
+Everything else can stay as it is. Click **Create application**.
+
+> Both lamps go in this one application. Not because TTN will pass
+> messages between them — it won't, that's what
+> [step 4](#4-deploy-the-bridge) is for — but so they share one webhook
+> and one API key.
+
+### 3c. Register the first lamp
+
+Inside your application: **End devices → + Register end device**.
+
+Choose **Enter end device specifics manually** (the tab at the top —
+*not* the device repository).
+
+Now fill in, in order:
+
+**Frequency plan** → `Europe 863-870 MHz (SF9 for RX2 - recommended)`
+
+**LoRaWAN version** → `LoRaWAN Specification 1.0.3`
+
+**Regional Parameters version** → `RP001 Regional Parameters 1.0.3 revision A`
+
+> These three must match what the Wio-E5 module expects. They are not
+> preferences — get one wrong and the lamp will transmit but never join.
+
+Click **Show advanced activation, LoRaWAN class and cluster settings**:
+
+**Activation mode** → `Over the air activation (OTAA)`
+
+**Additional LoRaWAN class capabilities** → tick **Class C (Continuous)**
+
+> **Don't skip Class C.** Your lamp is plugged into a wall, so it can
+> keep listening all the time. In the default Class A it only listens for
+> a couple of seconds right after it transmits — so a message from your
+> friend would sit in a queue for up to 15 minutes. Same 10-a-day budget
+> either way; Class C just means they arrive when they're sent.
+
+Then:
+
+| Field | What to do |
+|---|---|
+| JoinEUI (AppEUI) | type `0000000000000000` (sixteen zeros) → **Confirm** |
 | DevEUI | click **Generate** |
 | AppKey | click **Generate** |
-| End device ID | `lamp-1` (then `lamp-2` — **remember these**) |
+| End device ID | `lamp-1` ← **write this down** |
 
-Then open the device → **General settings → Network layer → Advanced MAC
-settings** and set **LoRaWAN class: Class C**.
+Click **Register end device**.
 
-> **Class C is not optional here.** The lamp is plugged into a wall, so it
-> can keep its receiver open and take a downlink the moment it is sent. In
-> Class A a downlink waits until the lamp next transmits — up to 15
-> minutes. Same ten-per-day budget either way; Class C just means they
-> arrive when they're sent.
+**📋 Copy these three now** — DevEUI, JoinEUI and AppKey. They go into
+`config.py` in step 5. You can always come back: the device page shows
+DevEUI and JoinEUI, and AppKey is under **General settings → Join
+settings** behind an eye icon.
 
-Repeat for lamp 2. Same application, its own DevEUI and AppKey.
+### 3d. Register the second lamp
 
-Keep the **DevEUI, JoinEUI and AppKey** for each — they go into
-`config.py` in step 5.
+Same application, same steps, **same frequency plan and versions**.
+
+Two things must differ:
+- **End device ID** → `lamp-2`
+- **DevEUI** and **AppKey** → click Generate again (they'll be different)
+
+### ✅ Checkpoint
+
+You should now have, under one application, two end devices called
+`lamp-1` and `lamp-2`, both showing **Class C** and **OTAA**, and six
+values written down (a DevEUI and AppKey for each, plus the zeros
+JoinEUI).
+
+Both will say *"Never seen"* — that's expected, they haven't been
+switched on yet.
 
 ---
 
 ## 4. Deploy the bridge
 
-This is the part that makes two lamps into one lamp. Without it they will
-join the network happily and never hear each other.
+**Why this exists:** TTN takes your lamp's message and stops there. It
+will not pass it to the other lamp — not even though they're in the same
+application. Something has to catch each message and send it on. This is
+that something, and without it your lamps will join the network happily
+and never hear each other.
 
-It's stateless, so Cloudflare's free tier runs it forever.
+It's about forty lines and runs free forever. **No terminal, no Node, no
+install** — it's all in the browser.
 
-```bash
-npm create cloudflare@latest friend-lights-bridge
-cd friend-lights-bridge
-# replace src/index.js with bridge/worker.js from this repo
-npx wrangler secret put SHARED_SECRET      # invent a long random string
-npx wrangler deploy
-```
+### 4a. Create the worker
 
-Set the lamp IDs to match what you registered (skip if you used the
-defaults `lamp-1` / `lamp-2`) by adding to `wrangler.toml`:
+1. Sign up at **[dash.cloudflare.com](https://dash.cloudflare.com)** (free,
+   no card).
+2. In the sidebar: **Compute (Workers) → Create → Start with Hello World
+   → Deploy**.
+3. Name it `friend-lights-bridge`.
+4. Once deployed, click **Edit code**.
+5. Delete everything in the editor. Open
+   [`bridge/worker.js`](bridge/worker.js) from this repo, copy the whole
+   file, paste it in.
+6. Click **Deploy**.
 
-```toml
-[vars]
-LAMPS = "lamp-1,lamp-2"
-```
+**📋 Copy your worker's URL** — something like
+`https://friend-lights-bridge.yourname.workers.dev`.
 
-### Point TTN at it
+### 4b. Give it a password
 
-In your application: **Integrations → Webhooks → Add webhook → Custom
-webhook.**
+The worker URL is public, so without this anyone who finds it could drive
+your lamps and burn the daily message budget.
 
-| Field | Value |
+Invent a long random string — mash the keyboard, 20+ characters. Call it
+your **shared secret**.
+
+In the worker: **Settings → Variables and Secrets → + Add**
+
+| | |
+|---|---|
+| Type | **Secret** |
+| Name | `SHARED_SECRET` |
+| Value | your random string |
+
+**Deploy** again.
+
+> If you named your devices anything other than `lamp-1` and `lamp-2`,
+> add a second variable here — Type **Text**, Name `LAMPS`, Value
+> `your-id-1,your-id-2`.
+
+### 4c. Point TTN at it
+
+Back in TTN, in your **application** (not a single device):
+**Integrations → Webhooks → + Add webhook → Custom webhook**.
+
+| Field | What to put |
 |---|---|
 | Webhook ID | `bridge` |
 | Webhook format | **JSON** |
-| Base URL | `https://<your-worker>.workers.dev` |
+| Base URL | your worker URL from 4a |
 | Downlink API key | click **Generate API key** |
-| Enabled event types | tick **Uplink message** only |
-| Additional headers | `x-shared-secret` : *the secret you set above* |
 
-The **Downlink API key** matters — without it TTN won't send the
-`X-Downlink-APIKey` header and the bridge has no way to reply. The shared
-secret matters too: the worker URL is public, and without it anyone could
-drive your lamps and burn the daily budget.
+Scroll to **Enabled event types**. Tick **Uplink message** and *nothing
+else* — the others would just wake the worker for no reason.
 
-> **Why the bridge uses `replace` rather than `push`:** TTN queues
-> downlinks. If a lamp is unreachable while five uplinks arrive from its
-> friend, `push` would queue five and spend five of that lamp's ten daily
-> messages delivering four that are already superseded. Because the
-> payload carries absolute counters, the newest one contains everything
-> the older ones did — so `replace` collapses the backlog to one. The CRDT
-> paying for itself a second time, on a part of the system that isn't even
-> on the device.
+Scroll to **Additional headers** and add one:
+
+| Key | Value |
+|---|---|
+| `x-shared-secret` | your secret from 4b |
+
+Click **Add webhook**.
+
+> **The Downlink API key is the step people miss.** Without it TTN won't
+> include the credentials the worker needs to reply, and the bridge will
+> answer every message with a 500 error.
+
+### ✅ Checkpoint
+
+Visit your worker URL in a browser. You should see:
+
+```
+friend-lights bridge
+```
+
+That means it's alive. It won't do anything else until a lamp sends
+something.
 
 ---
-
 ## 5. Configure and load
 
 ```bash
@@ -322,7 +450,7 @@ fails — see [Tests](#tests) for why that guard is there.
 mpremote connect /dev/ttyACM0 repl
 ```
 
-Reset the board:
+Tap **R** on the board. You want:
 
 ```
 [boot] friend-lights-open 2026-07-27.1 — lamp 1 (Zurich)
@@ -330,13 +458,34 @@ Reset the board:
 [lorawan] joined
 ```
 
-The strip breathes warm white while the join runs — it can take a minute
-— then settles into the shared colour.
+The strip breathes warm white while it joins — this can take a minute —
+then settles.
 
-Now touch the pad. You should see the hue move locally, and in the TTN
-console under **Live data** an uplink appear, followed by your worker
-scheduling a downlink for the other lamp. Within 15 minutes the other
-lamp starts drifting toward it.
+### Watch it work in TTN
+
+This is the tool that tells you what's actually happening, so it's worth
+learning now. Open your device in TTN and click **Live data**.
+
+When the lamp joins you'll see a green **Accept join-request**. Then
+touch the pad and within 15 minutes you'll see:
+
+| What you see | What it means |
+|---|---|
+| `Accept join-request` | The lamp is on the network. Coverage is fine. |
+| `Forward uplink data message` | Your touch reached TTN. Radio works. |
+| `Schedule downlink for transmission` **on the other lamp** | The bridge fired. Everything works. |
+
+**If you see the uplink but no downlink on the other lamp, the bridge is
+the problem** — not your wiring, not your radio. Check the worker (step
+4) and its logs under **Workers → your worker → Logs**.
+
+Do the same for lamp 2, and the two are linked.
+
+### The very first sync
+
+A brand-new lamp starts at counter zero, so until it hears from its
+friend both lamps will look the same dull warm white. Touch one. Within
+15 minutes the other starts drifting. Nothing is broken in the meantime.
 
 ---
 
@@ -389,7 +538,7 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 |---|---|---|
 | `no response — check wiring and baud rate` | TX/RX not crossed | XIAO TX → E5 RX, XIAO RX → E5 TX |
 | `join failed` | No gateway hearing you | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
-| Joins, uplinks visible in TTN, other lamp never changes | **The bridge isn't running** | Check the worker logs; this is the usual culprit |
+| Joins, uplinks visible in TTN, other lamp never changes | **The bridge isn't running** | The single most common failure. Cloudflare → your worker → **Logs** |
 | Bridge returns 500 "missing downlink headers" | No Downlink API key on the webhook | Generate one in the webhook settings |
 | Bridge returns 403 | Shared secret mismatch | The `x-shared-secret` header must match the worker secret |
 | Downlinks queue in TTN but never arrive | Device is Class A | Set **Class C** in Network layer settings |
