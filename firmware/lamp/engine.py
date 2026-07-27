@@ -92,7 +92,7 @@ class Engine:
 
     # ── News ────────────────────────────────────────────────
 
-    def note_arrival(self):
+    def note_arrival(self, pulse=True):
         """Called when a peer's state has been folded in.
 
         The difference in the shared touch total is how many times someone
@@ -100,11 +100,14 @@ class Engine:
         that many times before settling. This is the whole 'while you were
         out' idea, and it costs nothing extra on the wire because the
         touch counter was already in the payload.
+
+        `pulse=False` advances the baseline silently — used for our own
+        touches, so that a pulse always means the friend and never us.
         """
         now_total = self.shared.total_touches()
         delta = (now_total - self._known_touches) % 0x10000
         self._known_touches = now_total
-        if 0 < delta <= 0x8000:
+        if pulse and 0 < delta <= 0x8000:
             self._pulses = min(MAX_PULSES, self._pulses + delta)
 
     # ── Frame ───────────────────────────────────────────────

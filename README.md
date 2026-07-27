@@ -495,6 +495,9 @@ friend both lamps will look the same dull warm white. Touch one. Within
 **Tap** the pad — nudges the colour. **Hold 1 second** — power on/off.
 **Hold 5 seconds** — opens the setup portal.
 
+All three fire when you *lift your finger*, not when the timer passes, so
+a long press does exactly one thing.
+
 ### The setup portal
 
 Hold the pad for five seconds and the lamp raises **its own WiFi
@@ -598,6 +601,7 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 python3 tests/test_codec.py         # wire format, and rejecting junk
 python3 tests/test_shared_state.py  # CRDT convergence
 python3 tests/test_portal.py        # portal routing, and rejecting junk
+python3 tests/test_regressions.py   # one case per bug that was shipped
 python3 tests/test_firmware.py      # actually runs main() against stubs
 ```
 
@@ -607,6 +611,9 @@ refuses to load anything if they fail.
 `test_shared_state.py` is the one that matters: each case is a specific
 way the network will misbehave — reordering, duplication, heavy loss,
 simultaneous edits, reboots — and asserts the lamps still agree anyway.
+
+`test_regressions.py` holds one case per bug that actually shipped —
+nothing goes in it speculatively. Every test in it failed before its fix.
 
 `test_firmware.py` **executes** `main()` rather than compiling it. On the
 original project a bad push could be fixed over the air. Here it cannot:

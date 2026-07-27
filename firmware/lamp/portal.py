@@ -288,7 +288,13 @@ class Portal:
                     self.engine.set_power(bool(data["on"]))
                 if "hue_steps" in data:
                     try:
-                        self.shared.touch(int(data["hue_steps"]))
+                        # Clamped: the access point is open, so anything
+                        # on it can post here, and an unbounded step would
+                        # let one request spin the colour wheel arbitrarily
+                        # far — which then propagates to the friend's lamp.
+                        steps = int(data["hue_steps"])
+                        steps = max(1, min(16, steps))
+                        self.shared.touch(steps)
                         self.engine.note_arrival()
                     except (TypeError, ValueError):
                         pass
@@ -304,10 +310,16 @@ class Portal:
 
     # ── Responses ───────────────────────────────────────────
 
+    REASONS = {200: "OK", 302: "Found", 400: "Bad Request",
+               404: "Not Found", 500: "Internal Server Error"}
+
     def _send(self, conn, status, ctype, body, extra=""):
-        header = ("HTTP/1.1 %d OK\r\nContent-Type: %s\r\n"
+        # The reason phrase has to match the code. Sending "404 OK" is
+        # tolerated by browsers but is a lie to anything stricter.
+        header = ("HTTP/1.1 %d %s\r\nContent-Type: %s\r\n"
                   "Content-Length: %d\r\nConnection: close\r\n%s\r\n"
-                  % (status, ctype, len(body), extra))
+                  % (status, self.REASONS.get(status, "OK"),
+                     ctype, len(body), extra))
         conn.send(header.encode())
         if body:
             conn.send(body)

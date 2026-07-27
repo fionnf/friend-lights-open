@@ -353,6 +353,7 @@ def main():
     next_flush     = utime.ticks_add(now, STATE_FLUSH_MS)
     next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
     next_gc        = utime.ticks_add(now, 60_000)
+    next_retry     = utime.ticks_add(now, 30_000)
     dirty          = False              # we have news the peers lack
 
     # One write per boot guarantees the file exists, so a lamp that loses
@@ -368,8 +369,11 @@ def main():
         for raw in router.poll():
             try:
                 msg = codec.decode(raw)
-            except codec.DecodeError:
-                continue                # junk on a public medium is normal
+            except Exception:
+                # Deliberately broad. Junk on a public radio medium is
+                # normal, and no malformed frame may ever be able to take
+                # down a lamp that has no over-the-air recovery.
+                continue
             if shared.apply_remote(msg["lamp_id"],
                                    msg["hue_total"], msg["warm_total"],
                                    msg["touch_count"],
@@ -381,7 +385,10 @@ def main():
         event = touch.update()
         if event == "tap":
             shared.touch()
-            engine.note_arrival()       # keep our own touches out of the pulse
+            # Advance the pulse baseline WITHOUT pulsing: a pulse means
+            # "your friend reached for their lamp". Flashing at your own
+            # touch would drown the only signal it carries.
+            engine.note_arrival(pulse=False)
             dirty = True
             # Persist immediately. The 5-minute flush is fine for
             # brightness, but losing our own counter is worse than losing
@@ -411,15 +418,19 @@ def main():
             machine.reset()
 
         # ── Send ──
-        # The transports throttle themselves, so this may simply be
-        # declined; `dirty` stays set until something actually takes it.
-        if dirty and router.send(current_frame(touched=True)):
-            dirty = False
+        # router.ready() is checked FIRST so the frame is only built when
+        # something will actually take it. `dirty` stays set until then,
+        # and this loop runs ~1000×/s, so building it unconditionally
+        # meant a million discarded allocations between two LoRa sends.
+        if dirty and router.ready():
+            if router.send(current_frame(touched=True)):
+                dirty = False
 
         if utime.ticks_diff(now, next_heartbeat) >= 0:
             # Costs one uplink an hour and means a lamp that missed
             # everything still converges without anyone touching anything.
-            router.send(current_frame())
+            if router.ready():
+                router.send(current_frame())
             next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
 
         # ── Housekeeping ──
@@ -430,6 +441,14 @@ def main():
         if utime.ticks_diff(now, next_gc) >= 0:
             gc.collect()
             next_gc = utime.ticks_add(now, 60_000)
+
+        # ── Bring dropped links back ──
+        # Keep rendering and feeding the watchdog through a reconnect: a
+        # LoRaWAN join blocks for up to 90 s and would otherwise freeze
+        # the lamp mid-breath and then trip the watchdog.
+        if utime.ticks_diff(now, next_retry) >= 0:
+            router.service(tick=lambda: (feed(), engine.tick(strip)))
+            next_retry = utime.ticks_add(now, 30_000)
 
         # ── Render ──
         if utime.ticks_diff(now, next_frame) >= 0:
