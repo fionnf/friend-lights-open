@@ -29,6 +29,7 @@ hotspot, no monthly bill. About **€35 a lamp**, once.
 - [4. Deploy the bridge](#4-deploy-the-bridge)
 - [5. Configure and load](#5-configure-and-load)
 - [Test it all before the hardware arrives](#test-it-all-before-the-hardware-arrives)
+- [Reading what happened](#reading-what-happened)
 - [6. First light](#6-first-light)
 - [Using the lamp](#using-the-lamp)
 - [Living with ten messages a day](#living-with-ten-messages-a-day)
@@ -518,6 +519,35 @@ More payloads, if you want to see the colour move between sends:
 | `130110000AAA0001B200` | lamp 1, 1 touch |
 | `130120000AAA0002B200` | lamp 1, 2 touches (hue further round) |
 | `130210000AAA0001B200` | lamp 2, 1 touch |
+
+### Reading what happened
+
+Two places tell you everything, and between them they say which half is
+at fault.
+
+**TTN → your device → Live data.** Watch both lamps:
+
+| Event | Means |
+|---|---|
+| `Accept join-request` | on the network — coverage is fine |
+| `Forward uplink data message` | the uplink reached TTN |
+| `Receive downlink data message` on the **other** lamp | the bridge fired — it all works |
+
+An uplink with no matching downlink on the peer is **always the bridge**,
+never the radio.
+
+**Cloudflare → your worker → Logs.** TTN discards webhook response
+bodies, so the worker's log lines are the only record of what it decided:
+
+| Log line | Means |
+|---|---|
+| `uplink from lamp-1: ...` then `scheduled -> lamp-2` | working |
+| `REJECTED: bad or missing x-shared-secret` | the webhook header does not match the worker secret — or someone found your URL |
+| `ERROR: TTN sent no downlink headers` | no Downlink API key on the webhook |
+| `FAILED -> lamp-2: HTTP 403` | the API key lacks *Write downlink application traffic* |
+| `FAILED -> lamp-2: HTTP 404` | wrong app, webhook or device id |
+| only `ignored:` lines | the webhook has event types other than **Uplink message** enabled |
+| `-> (no peers)` | the sender is the only name in `LAMPS` |
 
 ### Test the worker on its own
 
