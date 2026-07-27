@@ -374,17 +374,41 @@ In the worker: **Settings → Variables and Secrets → + Add**
 > add a second variable here — Type **Text**, Name `LAMPS`, Value
 > `your-id-1,your-id-2`.
 
-### 4c. Point TTN at it
+### 4c. Make the downlink API key
 
-Back in TTN, in your **application** (not a single device):
-**Integrations → Webhooks → + Add webhook → Custom webhook**.
+**Do this before creating the webhook.** The webhook asks for a key, and
+the key is only shown once — so make it first and have it on the
+clipboard.
+
+In your **application** (not a device): left menu → **API keys** →
+**+ Add API key**.
+
+| Field | Value |
+|---|---|
+| Name | `bridge-downlink` |
+| Rights | choose **Grant individual rights**, then tick **Write downlink application traffic** |
+
+Click **Create API key**.
+
+> ⚠️ **Copy it now.** The Things Stack shows an API key exactly once. Leave
+> the page without copying and it is gone forever — you can delete it and
+> make a new one, but you cannot see that one again.
+
+"Write downlink application traffic" is the only right the bridge needs.
+Don't grant more: this key lives in a webhook config and its whole job is
+to send one downlink per uplink.
+
+### 4d. Point TTN at it
+
+Still in your **application**: **Integrations → Webhooks → + Add webhook
+→ Custom webhook**.
 
 | Field | What to put |
 |---|---|
 | Webhook ID | `bridge` |
 | Webhook format | **JSON** |
 | Base URL | your worker URL from 4a |
-| Downlink API key | click **Generate API key** |
+| Downlink API key | paste the key from 4c |
 
 Scroll to **Enabled event types**. Tick **Uplink message** and *nothing
 else* — the others would just wake the worker for no reason.
@@ -397,9 +421,10 @@ Scroll to **Additional headers** and add one:
 
 Click **Add webhook**.
 
-> **The Downlink API key is the step people miss.** Without it TTN won't
-> include the credentials the worker needs to reply, and the bridge will
-> answer every message with a 500 error.
+> **The Downlink API key is the step people miss.** Without it TTN never
+> sends the `X-Downlink-Apikey` header, the worker has no credentials to
+> reply with, and the bridge answers every uplink with a 500 — so the
+> lamps join fine and simply never hear each other.
 
 ### ✅ Checkpoint
 
@@ -581,7 +606,8 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 | `no response — check wiring and baud rate` | TX/RX not crossed | XIAO TX → E5 RX, XIAO RX → E5 TX |
 | `join failed` | No gateway hearing you | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
 | Joins, uplinks visible in TTN, other lamp never changes | **The bridge isn't running** | The single most common failure. Cloudflare → your worker → **Logs** |
-| Bridge returns 500 "missing downlink headers" | No Downlink API key on the webhook | Generate one in the webhook settings |
+| Bridge returns 500 "missing downlink headers" | No Downlink API key on the webhook | Create one under **Application → API keys** with *Write downlink application traffic*, then paste it into the webhook |
+| Can't find the API key you made | TTN shows it once, at creation | Delete it and make a new one; there is no way to view it again |
 | Bridge returns 403 | Shared secret mismatch | The `x-shared-secret` header must match the worker secret |
 | Downlinks queue in TTN but never arrive | Device is Class A | Set **Class C** in Network layer settings |
 | Both lamps ignore each other's touches | Same `LAMP_ID` | They must differ |
