@@ -17,8 +17,15 @@ LAMP_NAME = "Zurich"          # shown in the app; free text
 # Use OTAA. DevEui is per-device; AppEui and AppKey come from the
 # application you registered it under.
 LORA_ENABLED = True
+# DevEUI: unique per lamp — let TTN generate it.
 LORA_DEV_EUI = "0000000000000000"
-LORA_APP_EUI = "0000000000000000"
+# JoinEUI (called AppEUI in the older spec): identifies the join server,
+# so it is the SAME on both lamps. TTN's docs say all-zeros is fine, and
+# it usually is — but some LoRaWAN stacks read all-zeros as "not
+# configured yet" and silently refuse to join. Making one up costs
+# nothing and removes the possibility, so use any non-zero value and put
+# the identical one in the TTN console.
+LORA_APP_EUI = "0011223344556677"
 LORA_APP_KEY = "00000000000000000000000000000000"
 LORA_REGION  = "EU868"        # EU868 / US915 / AU915 / AS923 ...
 LORA_CLASS   = "C"            # C: mains-powered, receives at any time

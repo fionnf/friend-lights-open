@@ -294,12 +294,19 @@ Then:
 
 | Field | What to do |
 |---|---|
-| JoinEUI (AppEUI) | type `0000000000000000` (sixteen zeros) → **Confirm** |
+| JoinEUI (AppEUI) | type `0011223344556677` → **Confirm** (see the note below) |
 | DevEUI | click **Generate** |
 | AppKey | click **Generate** |
 | End device ID | `lamp-1` ← **write this down** |
 
 Click **Register end device**.
+
+> **Why not sixteen zeros?** The console offers all-zeros and TTN's docs
+> say it is fine. Usually it is. But some LoRaWAN stacks read an all-zero
+> JoinEUI as "not configured yet" and refuse to join, with no error that
+> says so — you just watch a lamp transmit forever and never connect.
+> Inventing a value costs nothing and removes the possibility. Any 16 hex
+> characters will do; it is an identifier, not a secret.
 
 **📋 Copy these three now** — DevEUI, JoinEUI and AppKey. They go into
 `config.py` in step 5. You can always come back: the device page shows
@@ -310,9 +317,14 @@ settings** behind an eye icon.
 
 Same application, same steps, **same frequency plan and versions**.
 
-Two things must differ:
-- **End device ID** → `lamp-2`
-- **DevEUI** and **AppKey** → click Generate again (they'll be different)
+What differs, and what must not:
+
+| | |
+|---|---|
+| **End device ID** | `lamp-2` — must differ |
+| **DevEUI** | Generate again — must differ, it identifies the device |
+| **AppKey** | Generate again — must differ, it is that lamp's secret |
+| **JoinEUI** | **the same** `0011223344556677` — it identifies the join server, not the lamp |
 
 ### ✅ Checkpoint
 
