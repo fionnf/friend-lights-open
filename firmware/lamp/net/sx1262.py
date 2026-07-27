@@ -22,6 +22,10 @@
 # If you have the standalone module on the header instead, NSS is GPIO4
 # and RST/BUSY/DIO1 move too — set them in config.py.
 #
+# Corroborated by Seeed's own RadioLib example for this kit:
+#     SX1262 radio = new Module(41, 39, 42, 40);
+# which is Module(cs, irq, rst, gpio) — NSS 41, DIO1 39, RST 42, BUSY 40.
+#
 # ── The TCXO ─────────────────────────────────────────────────────────
 # This module has no crystal. Its reference is an active TCXO powered
 # from the SX1262's own DIO3 pin at 1.8 V, so until DIO3 is told to

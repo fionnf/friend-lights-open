@@ -110,6 +110,12 @@ gives you SPI that reads back all zeros.
 
 All eight are set in `config.py`.
 
+The B2B column matches Seeed's own RadioLib example for this kit —
+`SX1262 radio = new Module(41, 39, 42, 40)`, which is
+`Module(cs, irq, rst, gpio)`, so NSS 41, DIO1 39, RST 42, BUSY 40. Two
+independent sources agreeing is about as much certainty as is available
+without the hardware in hand.
+
 ### The TCXO — read this before deciding the board is dead
 
 This module has **no crystal.** Its reference clock is an active TCXO
