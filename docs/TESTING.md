@@ -95,6 +95,27 @@ node tools/run_bridge_locally.mjs
 python3 tools/test_bridge.py --url http://127.0.0.1:8787     --secret test-secret --app demo --api-key demo-key     --downlink-base http://127.0.0.1:8787/fake-ttn
 ```
 
+### Open the lamp's page, with no lamp
+
+```bash
+python3 tools/preview_portal.py --leds 24 --groups 4 --lamps 2
+#  -> http://127.0.0.1:8080
+```
+
+Not a mock of the page — it **is** the page, served through the real
+`Portal` routing, driving the real CRDT and the real colour engine at 60
+fps. If a button works here it works on the lamp.
+
+`--lamps 2` has a friend touch theirs every twenty seconds, so you can
+watch colour arrive slowly instead of jumping, and see the zones
+reshuffle. `--leds` and `--groups` let you try a strip length before you
+solder one.
+
+This is also the cheapest way to decide `ARRIVAL_FADE_MS`. It is the
+single number that determines whether the lamp reads as post or as a
+notification, and it is far easier to judge here than beside real
+hardware that speaks every three hours.
+
 ### Watch two lamps for a week
 
 ```bash

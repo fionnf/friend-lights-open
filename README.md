@@ -206,11 +206,19 @@ firmware/
     ├── www/index.html
     └── net/                # transport.py, lorawan_e5.py, mqtt_wifi.py
 bridge/worker.js            # uplink -> the other lamp's downlink
-tools/                      # apply_env, deploy, simulate, preview, test
 .env                        # every secret, in one gitignored file
 tests/                      # five suites, no dependencies
 docs/
 ```
+
+| Tool | |
+|---|---|
+| `tools/apply_env.py` | write both lamp configs from `.env` |
+| `tools/deploy.sh --lamp N` | test, then load a lamp |
+| `tools/preview_portal.py` | the lamp's page, on your laptop |
+| `tools/simulate.py` | two lamps over a week, in your terminal |
+| `tools/test_bridge.py` | prove the Cloudflare bridge works |
+| `tools/run_bridge_locally.mjs` | run the bridge offline |
 
 | Doc | |
 |---|---|
@@ -227,6 +235,13 @@ docs/
 
 ```bash
 for t in tests/test_*.py; do python3 "$t"; done
+```
+
+Or see everything working before the parts arrive:
+
+```bash
+python3 tools/preview_portal.py --lamps 2   # the page, on your laptop
+python3 tools/simulate.py --hours 168       # a week of two lamps
 ```
 
 No dependencies, no runner. `tools/deploy.sh` runs them and refuses to

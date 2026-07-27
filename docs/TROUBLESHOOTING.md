@@ -28,3 +28,35 @@ Where to look is covered in
 | Colour changes feel far too slow | Working as intended | See [the README](../README.md#living-with-ten-messages-a-day) |
 
 ---
+
+---
+
+## Setup and config
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `apply_env.py` says "Not writing anything" | It found something that would break the pair | Read the reason — it names the exact field |
+| `No .env yet` | Not created | `cp .env.example .env` |
+| Deploy says "No config for lamp N" | `.env` not applied | `python3 tools/apply_env.py` |
+| Real keys showed up in `git status` | `.env` or a lamp config got tracked | `git rm --cached .env firmware/config.lamp*.py` — untracks without deleting |
+
+## The strip
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Wrong colours entirely | `LED_ORDER` | SK6812 is `GRBW`, WS2812 is `GRB` |
+| Only part of the strip lights | `NUM_LEDS` too low | Set it to what you actually soldered, in `.env` |
+| Zones look identical | `GROUP_SPREAD` near 0, or `NUM_GROUPS = 1` | Raise the spread, or add zones |
+| Whole strip one colour and you wanted zones | `NUM_GROUPS = 1` | Set it higher, then re-run `apply_env.py` |
+| Colours differ between the two lamps | They disagree on the counter | Give it a heartbeat cycle; if it persists, check both are in one TTN application |
+| Strip flickers or the lamp resets under load | Strip powered through the XIAO | Feed the strip from 5 V directly — 60 RGBW LEDs at white is ~3.5 A |
+
+## The control page
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Network is there, password rejected | `PORTAL_PASSWORD` under 8 characters | The ESP32 silently ignores short ones and comes up **open**; the boot log says which mode it used |
+| Joined, no page appeared | Phone suppressed the captive-portal prompt | Browse to **http://192.168.4.1** |
+| Page loads, buttons do nothing | Lamp still joining LoRaWAN | Wait for `[lorawan] joined`, then reload |
+| Slider snaps back | The lamp is the authority and disagreed | It is applying a slow fade — give it a moment |
+| Want to check the page without a lamp | | `python3 tools/preview_portal.py --lamps 2` |
