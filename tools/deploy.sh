@@ -54,6 +54,8 @@ mp cp "$CONFIG" :config.py
 for f in "$ROOT"/firmware/lamp/*.py;     do mp cp "$f" :lamp/;     done
 for f in "$ROOT"/firmware/lamp/net/*.py; do mp cp "$f" :lamp/net/; done
 mp cp "$ROOT/firmware/lamp/www/index.html" :lamp/www/
+# Handy to have on the board when a radio will not talk.
+mp cp "$ROOT/tools/radio_check.py" : 2>/dev/null || true
 
 echo
 echo "done. watch it boot with:"

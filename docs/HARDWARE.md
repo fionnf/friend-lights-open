@@ -91,17 +91,63 @@ counters in blocks and persists them **before** transmitting, so a power
 cut skips forward rather than repeating. If you ever reset the counter
 in the TTN console, delete `lorawan_fcnt.json` from the lamp to match.
 
-### SPI wiring for the Wio-SX1262
+### Wiring the Wio-SX1262
 
-```
-XIAO            Wio-SX1262
-D8  / GPIO7 ──► SCK        D10 / GPIO9 ──► MOSI
-D9  / GPIO8 ◄── MISO       D3  / GPIO4 ──► NSS
-D2  / GPIO3 ──► RST        D1  / GPIO2 ◄── BUSY
-D0  / GPIO1 ◄── DIO1
+**The kit and the standalone module use different pins.** The XIAO
+ESP32S3 kit joins the boards with a board-to-board connector; the
+standalone module goes on the through-hole header. Picking the wrong set
+gives you SPI that reads back all zeros.
+
+| | B2B kit *(default)* | Header module |
+|---|---|---|
+| SCK | GPIO7 | GPIO7 |
+| MOSI | GPIO9 | GPIO9 |
+| MISO | GPIO8 | GPIO8 |
+| **NSS** | **GPIO41** | **GPIO4** |
+| **RST** | **GPIO42** | GPIO3 |
+| **BUSY** | **GPIO40** | GPIO2 |
+| **DIO1** | **GPIO39** | GPIO1 |
+
+All eight are set in `config.py`.
+
+### The TCXO — read this before deciding the board is dead
+
+This module has **no crystal.** Its reference clock is an active TCXO
+powered from the SX1262's own **DIO3 pin at 1.8 V**. Until DIO3 is told
+to supply that voltage, the chip has no clock — and it fails in the most
+confusing way possible: SPI answers, registers read and write correctly,
+commands are accepted, and every transmission goes nowhere.
+
+The firmware sets it in `begin()`, before anything else, and calibrates
+*after* rather than before — calibrating against a clock that is not yet
+running produces a radio that looks configured and transmits nothing
+usable.
+
+If you ever port this or compare against another driver, that ordering is
+the first thing to check.
+
+### Check the radio before blaming anything else
+
+```bash
+mpremote connect /dev/ttyACM0 run tools/radio_check.py
 ```
 
-All eight pins are set in `config.py`; those are only defaults.
+It works from the bottom up and stops at the first failure, so you learn
+whether it is wiring, the TCXO, or simply no gateway in range:
+
+1. prints the pins in use, and what each variant expects
+2. SPI + reset — writes a register and reads it back
+3. `begin()` with the TCXO powered
+4. transmits a **real LoRaWAN frame** if ABP keys are set, so it should
+   appear in the TTN console
+5. listens on RX2 for 30 s, to test a queued downlink
+
+⚠️ It transmits. **Attach the antenna first** — transmitting into an open
+connector can damage the PA.
+
+If steps 1–4 pass but nothing appears in TTN Live data, the radio is
+fine and there is no gateway in range. That is a coverage problem, not a
+hardware one.
 
 ## Antenna
 

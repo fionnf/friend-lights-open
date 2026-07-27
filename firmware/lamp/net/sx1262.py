@@ -11,13 +11,23 @@
 # no CAD. Every extra register write here is one more thing that can be
 # wrong on hardware nobody has yet.
 #
-# Wiring, XIAO ESP32S3 to Wio-SX1262 (SPI):
-#   SCK   D8 / GPIO7        MOSI  D10 / GPIO9
-#   MISO  D9 / GPIO8        NSS   D3  / GPIO4
-#   RST   D2  / GPIO3       BUSY  D1  / GPIO2
-#   DIO1  D0  / GPIO1
+# ── Wiring ───────────────────────────────────────────────────────────
+# The XIAO ESP32S3 + Wio-SX1262 kit joins the two boards with a
+# board-to-board connector, NOT the through-hole header, and the two use
+# completely different pins. Defaults below are the B2B kit:
 #
-# Pins are set in config.py; those are only defaults.
+#   SCK  GPIO7   MOSI GPIO9   MISO GPIO8
+#   NSS  GPIO41  RST  GPIO42  BUSY GPIO40  DIO1 GPIO39
+#
+# If you have the standalone module on the header instead, NSS is GPIO4
+# and RST/BUSY/DIO1 move too — set them in config.py.
+#
+# ── The TCXO ─────────────────────────────────────────────────────────
+# This module has no crystal. Its reference is an active TCXO powered
+# from the SX1262's own DIO3 pin at 1.8 V, so until DIO3 is told to
+# supply that voltage the chip has no clock and does nothing at all: SPI
+# answers, registers read back, and every transmission goes nowhere.
+# It is the single most likely reason a board like this appears dead.
 
 import utime
 from machine import Pin, SPI
@@ -45,6 +55,7 @@ _WRITE_REGISTER = 0x0D
 _READ_REGISTER = 0x1D
 _GET_RX_BUFFER_STATUS = 0x13
 _SET_DIO2_AS_RF_SWITCH = 0x9D
+_SET_DIO3_AS_TCXO_CTRL = 0x97
 
 _PACKET_TYPE_LORA = 0x01
 _STANDBY_RC = 0x00
@@ -64,7 +75,8 @@ SYNC_WORD_PUBLIC = 0x3444
 class SX1262:
 
     def __init__(self, spi=None, *, sck=7, mosi=9, miso=8,
-                 nss=4, reset=3, busy=2, dio1=1, spi_id=1):
+                 nss=41, reset=42, busy=40, dio1=39, spi_id=1,
+                 tcxo_voltage=1.8, tcxo_delay_us=5000):
         self._nss = Pin(nss, Pin.OUT, value=1)
         self._reset = Pin(reset, Pin.OUT, value=1)
         self._busy = Pin(busy, Pin.IN)
@@ -73,6 +85,8 @@ class SX1262:
                                phase=0, sck=Pin(sck), mosi=Pin(mosi),
                                miso=Pin(miso))
         self._rx_active = False
+        self._tcxo_voltage = tcxo_voltage
+        self._tcxo_delay_us = tcxo_delay_us
 
     # ── Plumbing ────────────────────────────────────────────
 
@@ -133,14 +147,25 @@ class SX1262:
         if not self.reset():
             return False
         self._cmd(_SET_STANDBY, bytes([_STANDBY_RC]))
+
+        # TCXO FIRST. The module has no crystal — its reference clock is
+        # a TCXO powered from DIO3 — so nothing else configured before
+        # this means anything.
+        self._set_tcxo()
+
         self._cmd(_SET_PACKET_TYPE, bytes([_PACKET_TYPE_LORA]))
-        # The module switches its own antenna path from DIO2. Without
-        # this the chip transmits into a disconnected port.
+        # The module switches its own antenna path from DIO2: high for
+        # transmit, low for receive. Without this the chip transmits into
+        # a disconnected port and nothing hears it.
         self._cmd(_SET_DIO2_AS_RF_SWITCH, b"\x01")
         self._cmd(_SET_REGULATOR_MODE, b"\x01")        # DC-DC
+
+        # Calibrate AFTER the TCXO is running. Calibrating first tunes
+        # the chip against a clock that is not yet there, and the result
+        # is a radio that looks configured and transmits nothing usable.
         self._cmd(_CALIBRATE, b"\x7F")
         utime.sleep_ms(5)
-        self._wait()
+        self._wait(1000)
 
         self.set_frequency(frequency)
         self._set_pa(power)
@@ -158,6 +183,50 @@ class SX1262:
                          0, 0, 0, 0]))
         self.clear_irq()
         return True
+
+    def _set_tcxo(self):
+        """Tell DIO3 to power the TCXO, then wait for it to settle."""
+        code = {1.6: 0x00, 1.7: 0x01, 1.8: 0x02, 2.2: 0x03,
+                2.4: 0x04, 2.7: 0x05, 3.0: 0x06, 3.3: 0x07}.get(
+                    self._tcxo_voltage, 0x02)
+        # Timeout is in 15.625 us steps, 24-bit.
+        ticks = int(self._tcxo_delay_us / 15.625)
+        self._cmd(_SET_DIO3_AS_TCXO_CTRL,
+                  bytes([code, (ticks >> 16) & 0xFF,
+                         (ticks >> 8) & 0xFF, ticks & 0xFF]))
+        utime.sleep_ms(max(1, self._tcxo_delay_us // 1000 + 1))
+        self._wait(1000)
+
+    def probe(self):
+        """Is the radio actually there and clocked?
+
+        Writes a register and reads it back. SPI that answers with all
+        zeros or all ones is wiring; a value that will not stick is
+        usually the chip being held in reset or unpowered.
+        """
+        try:
+            if not self.reset():
+                return False, "BUSY never went low — check RST and BUSY"
+            self._cmd(_SET_STANDBY, bytes([_STANDBY_RC]))
+            self._write_register(_REG_SYNC_WORD, b"\x34\x44")
+            back = self._read_register(_REG_SYNC_WORD, 2)
+            if back == b"\x34\x44":
+                return True, "SPI ok, register read-back matches"
+            if back in (b"\x00\x00", b"\xff\xff"):
+                return False, ("SPI returned %s — check MISO, MOSI, SCK "
+                               "and NSS" % back.hex())
+            return False, "register read back as %s, expected 3444" % back.hex()
+        except Exception as e:
+            return False, "SPI failed: %s" % e
+
+    def _read_register(self, address, length):
+        self._wait()
+        self._nss.value(0)
+        self._spi.write(bytes([_READ_REGISTER, (address >> 8) & 0xFF,
+                               address & 0xFF, 0x00]))
+        data = self._spi.read(length)
+        self._nss.value(1)
+        return data
 
     def set_frequency(self, hz):
         # 2^25 / 32 MHz crystal

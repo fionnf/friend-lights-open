@@ -71,15 +71,16 @@ LORA_APP_SKEY = "{app_skey}"
 LORA_SF       = 9                    # must match RX2 on your plan
 LORA_TX_POWER = 14                   # dBm, EU868 ceiling
 
-# SPI to the Wio-SX1262
+# SPI to the Wio-SX1262 — BOARD-TO-BOARD kit pins. The standalone
+# module on the header uses different ones (NSS is GPIO4 there).
 SX_SPI_ID    = 1
 SX_SCK_PIN   = 7
 SX_MOSI_PIN  = 9
 SX_MISO_PIN  = 8
-SX_NSS_PIN   = 4
-SX_RESET_PIN = 3
-SX_BUSY_PIN  = 2
-SX_DIO1_PIN  = 1
+SX_NSS_PIN   = 41
+SX_RESET_PIN = 42
+SX_BUSY_PIN  = 40
+SX_DIO1_PIN  = 39
 LORA_REGION  = "{region}"
 LORA_CLASS   = "C"                   # mains-powered: listens continuously
 LORA_PORT    = 8
