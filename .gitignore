@@ -11,4 +11,3 @@ firmware/config.lamp*.py
 __pycache__/
 *.pyc
 .DS_Store
-.env
