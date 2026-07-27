@@ -28,11 +28,13 @@ mp() { mpremote connect "$PORT" "$@"; }
 
 mp mkdir :lamp     2>/dev/null || true
 mp mkdir :lamp/net 2>/dev/null || true
+mp mkdir :lamp/www 2>/dev/null || true
 
 mp cp "$ROOT/firmware/main.py"   :
 mp cp "$ROOT/firmware/config.py" :
 for f in "$ROOT"/firmware/lamp/*.py;     do mp cp "$f" :lamp/;     done
 for f in "$ROOT"/firmware/lamp/net/*.py; do mp cp "$f" :lamp/net/; done
+mp cp "$ROOT/firmware/lamp/www/index.html" :lamp/www/
 
 echo
 echo "done. watch it boot with:"

@@ -32,6 +32,8 @@ def run():
     shutil.copytree(os.path.join(ROOT, "firmware", "lamp"),
                     os.path.join(work, "lamp"))
     shutil.copy(os.path.join(ROOT, "firmware", "main.py"), work)
+    # The portal serves the page from an absolute path on the board.
+    os.makedirs(os.path.join(work, "lamp", "www"), exist_ok=True)
     for item in os.listdir(os.path.join(HERE, "stubs")):
         src = os.path.join(HERE, "stubs", item)
         dst = os.path.join(work, item)
@@ -47,7 +49,7 @@ def run():
         if m.split(".")[0] in ("machine", "utime", "network", "neopixel",
                                "ujson", "ubinascii", "umqtt", "config",
                                "main", "engine", "driver", "touch", "codec",
-                               "palette", "shared_state", "net"):
+                               "palette", "shared_state", "net", "portal", "socket"):
             del sys.modules[m]
 
     import traceback as _tb

@@ -29,6 +29,7 @@ hotspot, no monthly bill. About **€35 a lamp**, once.
 - [4. Deploy the bridge](#4-deploy-the-bridge)
 - [5. Configure and load](#5-configure-and-load)
 - [6. First light](#6-first-light)
+- [Using the lamp](#using-the-lamp)
 - [Living with ten messages a day](#living-with-ten-messages-a-day)
 - [Adding WiFi later](#adding-wifi-later)
 - [Troubleshooting](#troubleshooting)
@@ -489,6 +490,44 @@ friend both lamps will look the same dull warm white. Touch one. Within
 
 ---
 
+## Using the lamp
+
+**Tap** the pad — nudges the colour. **Hold 1 second** — power on/off.
+**Hold 5 seconds** — opens the setup portal.
+
+### The setup portal
+
+Hold the pad for five seconds and the lamp raises **its own WiFi
+network**, called `lamp-1-setup`. Join it from any phone and a page opens
+by itself — colour, brightness, power, and the TTN keys.
+
+Two things make this worth having:
+
+**It is free.** Controlling the lamp from a metre away has no business
+spending one of its ten daily messages. Everything you do here is instant
+and unmetered; your friend's lamp picks the change up next time this one
+transmits.
+
+**It replaces editing `config.py` over USB.** Give a friend a lamp, they
+hold the pad, join the network, paste their DevEUI and AppKey from their
+own TTN account, and hit save. No laptop, no cable, no Python.
+
+It works on **every phone**, which is why it is an access point and not
+Bluetooth — Web Bluetooth does not exist on iOS in any browser, including
+Chrome and Firefox there, because they are all WebKit underneath.
+
+The network is open, shuts itself off after **five minutes**, and only
+exists while someone is standing next to the lamp holding the pad. Values
+entered there are validated on the lamp, not in the browser, and saved to
+`provision.json` — which takes priority over `config.py`, so a
+provisioned lamp keeps its settings through any firmware update.
+
+> Your phone will warn that this network has no internet. That's correct
+> — the lamp isn't a router. Stay connected anyway.
+
+
+---
+
 ## Living with ten messages a day
 
 This is the part to explain to whoever you give the second lamp to.
@@ -546,6 +585,9 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 | Colour jumps backwards after a reboot | Counters weren't persisted | Should not happen — please open an issue |
 | Strip lights white, wrong colours | `LED_ORDER` | SK6812 is `GRBW`, WS2812 is `GRB` |
 | Touch never fires / fires constantly | Threshold | Print `TouchPad.read()` and set `TOUCH_THRESHOLD` between resting and touched |
+| Portal network doesn't appear | Held for under 5 s, or `PORTAL_ENABLED = False` | Keep holding; the strip keeps rendering throughout |
+| Joined the portal, no page opened | Phone suppressed the captive-portal prompt | Open a browser and go to `192.168.4.1` |
+| Portal vanished | 5-minute idle timeout | Hold the pad again |
 | Colour changes feel far too slow | Working as intended | See [above](#living-with-ten-messages-a-day) |
 
 ---
@@ -555,6 +597,7 @@ in [docs/PROTOCOL.md](docs/PROTOCOL.md#running-lorawan-and-wifi-together).
 ```bash
 python3 tests/test_codec.py         # wire format, and rejecting junk
 python3 tests/test_shared_state.py  # CRDT convergence
+python3 tests/test_portal.py        # portal routing, and rejecting junk
 python3 tests/test_firmware.py      # actually runs main() against stubs
 ```
 
@@ -586,6 +629,8 @@ firmware/
     ├── palette.py          # hue -> RGBW
     ├── driver.py           # SK6812/WS2812 via ESP32 RMT
     ├── touch.py            # native ESP32-S3 capacitive touch
+    ├── portal.py           # SoftAP + captive portal, non-blocking
+    ├── www/index.html      # the local control page
     └── net/
         ├── transport.py    # one interface, several radios
         ├── lorawan_e5.py   # Wio-E5 over AT commands
@@ -600,10 +645,6 @@ tests/
 
 ## Not built yet
 
-- **Local control app.** A SoftAP captive portal served by the lamp, for
-  when you're in the room — instant, free, and it never touches the
-  downlink budget. This is also where TTN key entry should live, so a
-  friend never has to edit `config.py` over USB.
 - **Remote viewer.** A static page subscribed read-only to TTN's MQTT.
   Reading is unmetered, so showing both lamps live costs nothing.
 - **Alarms.** Sunrise/sunset, as in the original project. The clock needs

@@ -19,6 +19,7 @@ from palette import BASE_WARM_WHITE
 from driver import Strip
 from touch import TouchManager
 from engine import Engine
+from portal import Portal
 from net.transport import Router
 
 import config
@@ -37,11 +38,99 @@ def feed():
         wdt.feed()
 
 
+PROVISION_FILE = "provision.json"
+_provision = {}
+
+
+def load_provision():
+    """Values entered through the setup portal, which win over config.py.
+
+    Kept as a JSON overlay rather than rewriting config.py: generating
+    Python source on a device that then has to import it is a good way to
+    brick a lamp that cannot be recovered over the air.
+    """
+    global _provision
+    try:
+        with open(PROVISION_FILE) as f:
+            data = ujson.load(f)
+        _provision = data if isinstance(data, dict) else {}
+    except Exception:
+        _provision = {}
+
+
 def _cfg(name, default):
     """Config values must be read with a fallback: config.py is never
     overwritten, so a lamp already in someone's house will not have keys
     added by a later version."""
+    if name in _provision:
+        return _provision[name]
     return getattr(config, name, default)
+
+
+# ── Provisioning from the portal ─────────────────────────────
+
+def _is_hex(value, length):
+    if not isinstance(value, str) or len(value) != length:
+        return False
+    for c in value:
+        if c not in "0123456789abcdefABCDEF":
+            return False
+    return True
+
+
+def apply_provision(data):
+    """Validate and persist settings from the setup portal.
+
+    Returns True if anything was saved. Everything is checked here rather
+    than in the browser: the portal is an open access point, so the page
+    is not a trustworthy source, and bad TTN keys would leave the lamp
+    unable to join with no obvious reason why.
+    """
+    update = {}
+
+    if "lamp_id" in data:
+        try:
+            lamp_id = int(data["lamp_id"])
+        except (TypeError, ValueError):
+            return False
+        if not (1 <= lamp_id <= 255):
+            return False
+        update["LAMP_ID"] = lamp_id
+
+    for field, key, length in (("dev_eui", "LORA_DEV_EUI", 16),
+                               ("app_eui", "LORA_APP_EUI", 16),
+                               ("app_key", "LORA_APP_KEY", 32)):
+        if field in data:
+            value = str(data[field]).replace(" ", "")
+            if not _is_hex(value, length):
+                return False
+            update[key] = value.upper()
+
+    ssid = data.get("wifi_ssid")
+    if isinstance(ssid, str) and 0 < len(ssid) <= 32:
+        password = data.get("wifi_pass")
+        password = password if isinstance(password, str) else ""
+        if len(password) <= 64:
+            update["WIFI_NETWORKS"] = [[ssid, password]]
+            update["WIFI_ENABLED"] = True
+
+    if not update:
+        return False
+
+    global _provision
+    merged = dict(_provision)
+    merged.update(update)
+    try:
+        _write_json(PROVISION_FILE, merged)
+    except Exception as e:
+        print("[provision] save failed: %s" % e)
+        return False
+    # Keep the in-memory copy in step, or a second save in the same
+    # session would merge against a stale (usually empty) dict and
+    # silently drop everything entered before it.
+    _provision = merged
+    print("[provision] saved: %s" % sorted(update.keys()))
+    return True
 
 
 # ── Flash ────────────────────────────────────────────────────
@@ -123,7 +212,7 @@ def build_transports(tick=None):
             prefix = _cfg("MQTT_PREFIX", "friendlights")
             mqtt = MQTTWiFi(_mqtt_factory,
                             prefix + "/state",
-                            prefix + "/status/%d" % config.LAMP_ID)
+                            prefix + "/status/%d" % _cfg("LAMP_ID", 1))
             mqtt.start(tick=tick)
             router.add(mqtt)
         except Exception as e:
@@ -203,6 +292,8 @@ class Pulser:
 def main():
     global wdt
 
+    load_provision()                    # portal settings win over config.py
+
     lamp_id = _cfg("LAMP_ID", 1)
     print("[boot] friend-lights-open %s — lamp %d (%s)"
           % (FIRMWARE_VERSION, lamp_id, _cfg("LAMP_NAME", "")))
@@ -234,6 +325,22 @@ def main():
         engine._power_level = 0.0      # instant off, no fade-in at boot
 
     pulser.stop()
+
+    # Local control and provisioning, raised on demand by a 5 s press.
+    # Never on by default: an always-up open access point is needless
+    # exposure and pointless RF noise.
+    restart_at = [None]
+
+    def on_config(data):
+        if not apply_provision(data):
+            return False
+        # Reboot from the main loop, not from here — this runs inside the
+        # HTTP handler and resetting now would drop the response, leaving
+        # the user staring at a failed save that actually worked.
+        restart_at[0] = utime.ticks_add(utime.ticks_ms(), 2_000)
+        return True
+
+    portal = Portal(shared, engine, lamp_id, on_config=on_config)
 
     def current_frame(touched=False):
         h, w, t = shared.my_totals()
@@ -288,6 +395,20 @@ def main():
             engine.toggle_power()
             dirty = True
             save_state(shared, engine, force=True)
+        elif event == "long_hold" and _cfg("PORTAL_ENABLED", True):
+            if portal.active:
+                portal.stop()
+            elif portal.start():
+                print("[portal] join WiFi '%s' then open any page" % portal.ssid)
+
+        # ── Local control portal ──
+        portal.tick()
+
+        if restart_at[0] is not None and utime.ticks_diff(now, restart_at[0]) >= 0:
+            print("[provision] restarting to apply new settings")
+            save_state(shared, engine, force=True)
+            portal.stop()
+            machine.reset()
 
         # ── Send ──
         # The transports throttle themselves, so this may simply be

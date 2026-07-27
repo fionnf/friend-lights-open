@@ -72,5 +72,14 @@ ARRIVAL_FADE_MS = 90 * 1000
 BREATHE_SPEED = 0.0008
 BREATHE_DEPTH = 0.04
 
+# ── Setup portal ────────────────────────────────────────────
+# Hold the touch pad for 5 seconds and the lamp raises its own WiFi
+# network, "lamp-<id>-setup". Join it and a page opens by itself: colour,
+# brightness, power, and the TTN keys.
+#
+# Local control costs nothing — it never spends one of the ten daily
+# messages. The access point shuts itself off after 5 minutes.
+PORTAL_ENABLED = True
+
 # ── Watchdog ────────────────────────────────────────────────
 WATCHDOG_ENABLED = True

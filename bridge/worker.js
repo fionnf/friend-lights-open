@@ -89,13 +89,20 @@ export default {
       .map((s) => s.trim())
       .filter((id) => id && id !== sender);
 
+    // The Things Stack documents these headers as operation *paths*. In
+    // practice it sends absolute URLs, but handling both costs one line
+    // and the failure mode otherwise is a completely silent no-op.
+    const cluster = env.TTN_CLUSTER || "eu1";
+    const base = replaceUrl.startsWith("http")
+      ? ""
+      : `https://${cluster}.cloud.thethings.network`;
+
     const results = await Promise.all(
       lamps.map(async (peer) => {
         // .../devices/<sender>/down/replace -> .../devices/<peer>/down/replace
-        const url = replaceUrl.replace(
-          `/devices/${sender}/`,
-          `/devices/${peer}/`
-        );
+        const url =
+          base +
+          replaceUrl.replace(`/devices/${sender}/`, `/devices/${peer}/`);
         const res = await fetch(url, {
           method: "POST",
           headers: {

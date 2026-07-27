@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<!--
+  Served from the lamp's own flash over its own access point.
+
+  Everything is inline and there are no external requests of any kind:
+  no fonts, no CDN, no favicon. A phone connected to this AP has NO
+  INTERNET, so a single external reference would hang the page load.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lamp</title>
+<style>
+  :root { color-scheme: dark light; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 1.25rem 1rem 3rem;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #14151a; color: #e9e9ee;
+    max-width: 32rem; margin-inline: auto;
+  }
+  @media (prefers-color-scheme: light) {
+    body { background: #f6f6f8; color: #1a1a1f; }
+    .card { background: #fff; border-color: rgba(0,0,0,.08); }
+    button.sec { background: #fff; }
+    input, select { background: #fff; color: #1a1a1f; }
+  }
+  h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; opacity: .6; letter-spacing: .02em; }
+  .card {
+    background: #1d1e25; border: 1px solid rgba(255,255,255,.07);
+    border-radius: 14px; padding: 1rem; margin-bottom: .85rem;
+  }
+  #swatch {
+    height: 8rem; border-radius: 12px; margin-bottom: .85rem;
+    transition: background-color .6s ease;
+    box-shadow: inset 0 0 60px rgba(0,0,0,.25);
+  }
+  .row { display: flex; gap: .6rem; }
+  button {
+    flex: 1; padding: .95rem 1rem; font-size: 1rem; font-weight: 600;
+    border-radius: 11px; border: 1px solid transparent; cursor: pointer;
+    color: #fff; background: #4f7cff; font-family: inherit;
+  }
+  button.sec { background: #262832; color: inherit; border-color: rgba(255,255,255,.1); }
+  button:active { transform: scale(.98); }
+  button[disabled] { opacity: .5; }
+  label { display: block; font-size: .8rem; opacity: .6; margin: .9rem 0 .35rem; }
+  input[type=range] { width: 100%; accent-color: #4f7cff; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: .6rem .7rem; font-size: .95rem; font-family: ui-monospace, monospace;
+    border-radius: 8px; border: 1px solid rgba(128,128,128,.35);
+    background: #262832; color: inherit;
+  }
+  .muted { font-size: .8rem; opacity: .55; }
+  summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+  #toast {
+    position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+    background: #2c2e39; color: #fff; padding: .6rem 1rem; border-radius: 10px;
+    font-size: .85rem; opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<h1>Lamp <span id="id"></span></h1>
+
+<div class="card">
+  <div id="swatch"></div>
+  <div class="row">
+    <button id="tap">Touch</button>
+    <button id="power" class="sec">Power</button>
+  </div>
+  <label>Brightness <span id="brv" class="muted"></span></label>
+  <input type="range" id="br" min="0" max="100" value="60">
+  <p class="muted" id="touches"></p>
+</div>
+
+<div class="card">
+  <details>
+    <summary>Setup</summary>
+    <p class="muted" style="margin-top:.8rem">
+      Paste from the TTN console. Saved to the lamp; it restarts to apply.
+    </p>
+    <label>Lamp ID (1 or 2 — must differ between lamps)</label>
+    <input type="text" id="lamp_id" inputmode="numeric" placeholder="1">
+    <label>DevEUI</label>
+    <input type="text" id="dev_eui" placeholder="16 hex characters">
+    <label>JoinEUI / AppEUI</label>
+    <input type="text" id="app_eui" placeholder="0000000000000000">
+    <label>AppKey</label>
+    <input type="password" id="app_key" placeholder="32 hex characters">
+    <label style="margin-top:1.2rem">WiFi network (optional)</label>
+    <input type="text" id="wifi_ssid" placeholder="leave blank to use LoRa only">
+    <label>WiFi password</label>
+    <input type="password" id="wifi_pass">
+    <div class="row" style="margin-top:1rem">
+      <button id="save">Save &amp; restart</button>
+    </div>
+  </details>
+</div>
+
+<p class="muted">
+  This page is served by the lamp itself. Changes here are instant and
+  free — they don't use the lamp's ten daily messages. Your friend's lamp
+  will see them next time it hears from this one.
+</p>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let busy = false, dragging = false;
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+// Mirrors palette.py closely enough for a preview. The lamp is the
+// authority; this is only so the swatch looks approximately right.
+const STOPS = [
+  [255,200,80],[255,160,0],[255,120,0],[255,60,0],[255,0,0],[255,0,60],
+  [255,0,140],[200,0,200],[140,0,255],[80,0,255],[0,0,255],[0,60,255],
+  [0,140,255],[0,200,255],[0,255,220],[0,255,160],[0,255,80],[0,220,0],
+  [80,255,0],[160,255,0],[220,255,0],[255,240,0],[255,180,40]
+];
+function css(hue, warmth, bright) {
+  const n = STOPS.length, s = ((hue % 1) + 1) % 1 * n, i = Math.floor(s), f = s - i;
+  const a = STOPS[i % n], b = STOPS[(i + 1) % n];
+  const sat = 1 - warmth;
+  const mix = k => Math.round((a[k] + (b[k] - a[k]) * f) * sat + [255, 190, 120][k] * warmth);
+  const v = Math.max(0.15, bright);
+  return `rgb(${Math.round(mix(0)*v)},${Math.round(mix(1)*v)},${Math.round(mix(2)*v)})`;
+}
+
+async function api(path, body) {
+  const opt = body ? { method: "POST", body: JSON.stringify(body) } : {};
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function render(s) {
+  $("id").textContent = "#" + s.lamp_id;
+  $("swatch").style.backgroundColor = s.on ? css(s.hue, s.warmth, s.brightness) : "#23242c";
+  $("power").textContent = s.on ? "Turn off" : "Turn on";
+  $("touches").textContent = s.touches + " touches shared with your friend";
+  if (!dragging) { $("br").value = Math.round(s.brightness * 100); }
+  $("brv").textContent = Math.round(s.brightness * 100) + "%";
+}
+
+async function refresh() {
+  if (busy) return;
+  try { render(await api("/state")); } catch (e) { /* lamp busy rendering */ }
+}
+
+$("tap").onclick = async () => {
+  busy = true;
+  try { await api("/touch", {}); toast("Colour nudged"); }
+  catch (e) { toast("Lamp didn't answer"); }
+  busy = false; refresh();
+};
+
+$("power").onclick = async () => {
+  busy = true;
+  const on = $("power").textContent.startsWith("Turn on");
+  try { await api("/set", { on }); } catch (e) { toast("Lamp didn't answer"); }
+  busy = false; refresh();
+};
+
+$("br").oninput = () => {
+  dragging = true;
+  $("brv").textContent = $("br").value + "%";
+};
+$("br").onchange = async () => {
+  try { await api("/set", { brightness: $("br").value / 100 }); }
+  catch (e) { toast("Lamp didn't answer"); }
+  dragging = false; refresh();
+};
+
+$("save").onclick = async () => {
+  const cfg = {};
+  for (const k of ["lamp_id","dev_eui","app_eui","app_key","wifi_ssid","wifi_pass"]) {
+    const v = $(k).value.trim();
+    if (v) cfg[k] = v;
+  }
+  if (!Object.keys(cfg).length) { toast("Nothing to save"); return; }
+  $("save").disabled = true;
+  try {
+    const r = await api("/config", cfg);
+    toast(r.saved ? "Saved — restarting" : "Rejected, check the values");
+  } catch (e) { toast("Save failed"); }
+  $("save").disabled = false;
+};
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
