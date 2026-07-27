@@ -10,7 +10,7 @@
 # Must be unique within your group, 1-255. This is the only thing that
 # has to differ between two lamps — everything else can be identical.
 LAMP_ID   = 1
-LAMP_NAME = "Zurich"          # shown in the app; free text
+LAMP_NAME = ""                # optional; appears in the WiFi network name
 
 # ── LoRaWAN (The Things Network) ────────────────────────────
 # Register the device in the TTN console, then paste its values here.

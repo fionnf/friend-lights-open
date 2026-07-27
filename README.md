@@ -30,7 +30,7 @@ from a phone without spending one of its ten daily messages:
 
 | | |
 |---|---|
-| **Network** | `deLENIghted-1-Zurich` / `deLENIghted-2-Cork` |
+| **Network** | `deLENIghted-1` and `deLENIghted-2` |
 | **Password** | `lightupleni` |
 | **Page** | opens by itself, or **http://192.168.4.1** |
 

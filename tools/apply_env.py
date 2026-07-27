@@ -137,7 +137,8 @@ def main():
     for n in (1, 2):
         lamps.append({
             "n": n,
-            "name": env.get("LAMP%d_NAME" % n, "").strip() or "lamp%d" % n,
+            # Optional and cosmetic — it only shows up in the SSID.
+            "name": env.get("LAMP%d_NAME" % n, "").strip(),
             "dev_eui": need("LAMP%d_DEV_EUI" % n),
             "app_key": need("LAMP%d_APP_KEY" % n),
         })
@@ -188,13 +189,15 @@ def main():
 
     for lamp in lamps:
         slug = re.sub(r"[^a-z0-9]+", "-", lamp["name"].lower()).strip("-")
-        ssid = "deLENIghted-%d-%s" % (lamp["n"], lamp["name"])
+        ssid = "deLENIghted-%d" % lamp["n"]
+        if lamp["name"]:
+            ssid += "-" + lamp["name"]
         if len(ssid) > 32:
             ssid = ssid[:32]
         path = os.path.join(ROOT, "firmware", "config.lamp%d.py" % lamp["n"])
         with open(path, "w") as f:
             f.write(TEMPLATE.format(
-                n=lamp["n"], name=lamp["name"], slug=slug or "lamp",
+                n=lamp["n"], name=lamp["name"], slug=slug or ("lamp%d" % lamp["n"]),
                 dev_eui=lamp["dev_eui"].upper(),
                 join_eui=join_eui.upper(),
                 app_key=lamp["app_key"].upper(),
@@ -203,8 +206,7 @@ def main():
                 wifi_networks=repr([[wifi_ssid, wifi_pass]]) if wifi_ssid
                 else "[]",
                 ssid=ssid, portal_password=ssid_pw))
-        print("  wrote firmware/config.lamp%d.py   %-8s  %s"
-              % (lamp["n"], lamp["name"], ssid))
+        print("  wrote firmware/config.lamp%d.py   %s" % (lamp["n"], ssid))
 
     print("\n  Both configs written from .env. Neither is tracked by git.")
     print("\n  Next:  ./tools/deploy.sh --lamp 1 /dev/ttyACM0\n")

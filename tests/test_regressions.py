@@ -360,10 +360,8 @@ if os.path.exists(_env) or any(os.path.exists(c) for c in _cfgs):
     print("  SKIP  .env or a lamp config already exists — not touching them")
 else:
     _GOOD = """
-LAMP1_NAME = Zurich
 LAMP1_DEV_EUI = 70B3D57ED0061111
 LAMP1_APP_KEY = 0123456789ABCDEF0123456789ABCDEF
-LAMP2_NAME = Cork
 LAMP2_DEV_EUI = 70B3D57ED0062222
 LAMP2_APP_KEY = FEDCBA9876543210FEDCBA9876543210
 JOIN_EUI = 0011223344556677

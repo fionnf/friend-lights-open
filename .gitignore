@@ -5,6 +5,9 @@
 firmware/config.py
 firmware/config.lamp*.py
 
+# IDE noise
+.idea/
+
 __pycache__/
 *.pyc
 .DS_Store

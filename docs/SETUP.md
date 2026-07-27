@@ -409,7 +409,7 @@ mpremote connect /dev/ttyACM0 repl
 Tap **R** on the board. You want:
 
 ```
-[boot] friend-lights-open 2026-07-27.1 — lamp 1 (Zurich)
+[boot] friend-lights-open 2026-07-27.1 — lamp 1 
 [lorawan] joining...
 [lorawan] joined
 ```
@@ -423,7 +423,7 @@ The control network is up from boot, before LoRaWAN has even joined:
 
 | | |
 |---|---|
-| Network | `deLENIghted-1-Zurich` — set by `PORTAL_SSID` |
+| Network | `deLENIghted-1` — set by `PORTAL_SSID` |
 | Password | `lightupleni` |
 | Page | opens by itself, or **http://192.168.4.1** |
 

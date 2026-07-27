@@ -176,7 +176,7 @@ mpremote connect /dev/ttyACM0 repl
 Tap **R**. You want:
 
 ```
-[boot] friend-lights-open 2026-07-27.1 — lamp 1 (Zurich)
+[boot] friend-lights-open 2026-07-27.1 — lamp 1 
 [lorawan] joining...
 [lorawan] joined
 ```
