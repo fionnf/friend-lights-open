@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ ! -f "$ROOT/firmware/config.py" ]; then
   echo "firmware/config.py is missing." >&2
   echo "  cp firmware/config.example.py firmware/config.py" >&2
-  echo "then set LAMP_ID and your TTN keys. See docs/SETUP.md." >&2
+  echo "then set LAMP_ID and your TTN keys. See the README." >&2
   exit 1
 fi
 
