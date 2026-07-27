@@ -83,6 +83,11 @@ class Portal:
         if self.active or network is None:
             return False
         self.ssid = self._ssid_override or ("lamp-%d" % self.lamp_id)
+        # 802.11 caps an SSID at 32 bytes. Longer is rejected by the
+        # driver, and the lamp would come up with no network at all.
+        if len(self.ssid) > 32:
+            self.ssid = self.ssid[:32]
+            print("[portal] SSID truncated to '%s'" % self.ssid)
         try:
             self._ap = network.WLAN(network.AP_IF)
             self._ap.active(True)

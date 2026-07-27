@@ -342,5 +342,38 @@ for _ in range(80):
 check("an on-demand portal still times out", p2.active is False)
 
 
+# ── The number in the SSID must match LAMP_ID ────────────────
+# You pick a network by its name on a phone. If the number in it does not
+# match the lamp it belongs to, you confidently configure the wrong lamp.
+print("\nssid matches lamp id")
+
+import re as _re
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _n in (1, 2):
+    _path = os.path.join(_root, "firmware", "config.lamp%d.py" % _n)
+    if not os.path.exists(_path):
+        continue
+    _ns = {}
+    exec(open(_path).read(), _ns)
+    _ssid = _ns.get("PORTAL_SSID", "")
+    check("lamp%d SSID is at most 32 chars" % _n, len(_ssid) <= 32,
+          "%d: %s" % (len(_ssid), _ssid))
+    _nums = _re.findall(r"\d+", _ssid)
+    check("lamp%d SSID carries its own id (%s)" % (_n, _ssid),
+          str(_ns["LAMP_ID"]) in _nums,
+          "LAMP_ID=%s but SSID says %s" % (_ns["LAMP_ID"], _nums))
+    check("lamp%d password is long enough for WPA2" % _n,
+          len(_ns.get("PORTAL_PASSWORD") or "") >= 8,
+          "short passwords silently open the network")
+
+_a, _b = {}, {}
+exec(open(os.path.join(_root, "firmware", "config.lamp1.py")).read(), _a)
+exec(open(os.path.join(_root, "firmware", "config.lamp2.py")).read(), _b)
+check("the two lamps have different SSIDs",
+      _a["PORTAL_SSID"] != _b["PORTAL_SSID"])
+check("...and different LAMP_IDs", _a["LAMP_ID"] != _b["LAMP_ID"])
+check("...and the same JoinEUI", _a["LORA_APP_EUI"] == _b["LORA_APP_EUI"])
+
+
 print("\n%d failed" % len(failures) if failures else "\nall passed")
 sys.exit(1 if failures else 0)

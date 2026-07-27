@@ -350,8 +350,9 @@ def main():
         shared, engine, lamp_id, on_config=on_config,
         password=_cfg("PORTAL_PASSWORD", None),
         always_on=_cfg("PORTAL_ALWAYS_ON", True),
-        ssid=("lamp-%s" % name.lower().replace(" ", "-")) if name
-             else "lamp-%d" % lamp_id)
+        ssid=_cfg("PORTAL_SSID",
+                  ("lamp-%s" % name.lower().replace(" ", "-")) if name
+                  else "lamp-%d" % lamp_id))
     if _cfg("PORTAL_ENABLED", True) and _cfg("PORTAL_ALWAYS_ON", True):
         portal.start()
 

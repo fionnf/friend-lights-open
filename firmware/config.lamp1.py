@@ -81,6 +81,7 @@ BREATHE_DEPTH = 0.04
 # the ESP32 and you would get an OPEN network without being told.
 PORTAL_ENABLED   = True
 PORTAL_ALWAYS_ON = True
-PORTAL_PASSWORD  = "lightupleni"
+PORTAL_SSID      = "deLENIghted-1-Zurich"   # max 32 characters
+PORTAL_PASSWORD  = "lightupleni"        # min 8 — see above
 
 WATCHDOG_ENABLED = True
