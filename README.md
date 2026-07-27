@@ -146,14 +146,20 @@ but only **ten downlinks**. Everything follows from that one number.
 | Part | ~Cost | Notes |
 |---|---|---|
 | [Seeed XIAO ESP32S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | €13 | WiFi + BLE + native capacitive touch |
-| [Seeed Grove Wio-E5](https://www.seeedstudio.com/Grove-LoRa-E5-STM32WLE5JC-p-4867.html) | €14 | LoRaWAN stack runs **on the module** |
+| [Wio-E5](https://www.seeedstudio.com/Grove-LoRa-E5-STM32WLE5JC-p-4867.html) **or** [Wio-SX1262](https://thepihut.com/products/wio-sx1262-for-xiao) | €14 | either works — one line in `.env` |
 | SK6812 RGBW strip | €5 | WS2812 works too, minus the white channel |
 | 5 V supply, 330 Ω resistor | — | |
 
-**Get the Wio-E5, not the Wio-SX1262.** The SX1262 is a bare modem, and
-MicroPython has no LoRaWAN stack worth betting a project on — you would
-be rewriting everything in C++. The E5 carries a complete stack in its
-own firmware, driven by AT strings over UART.
+**Both radios are supported.** The Wio-E5 carries a certified LoRaWAN
+stack in its own firmware and is driven by AT strings — lower risk, and
+what I would fit first. The Wio-SX1262 is a bare radio, so the stack
+runs on the ESP32 in Python: ABP rather than OTAA, and Class C, which
+together mean nothing in the path is timing-critical.
+
+The crypto for that stack is checked against **RFC 4493 and FIPS-197
+test vectors**, because a wrong message integrity code produces a lamp
+that transmits perfectly and is silently ignored by the network, with
+nothing in the TTN console to say a frame arrived.
 
 **→ [docs/HARDWARE.md](docs/HARDWARE.md)** for wiring, antennas, and why
 placement beats any antenna you can buy.

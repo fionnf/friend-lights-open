@@ -62,6 +62,47 @@ directly from a 5 V supply rather than through the XIAO.
 
 ---
 
+## Two radios, one interface
+
+| | Wio-E5 | Wio-SX1262 |
+|---|---|---|
+| LoRaWAN stack | **on the module** | on the ESP32, in Python |
+| Driven by | AT commands over UART | SPI, register level |
+| Activation | OTAA | **ABP** |
+| Config | `LORA_RADIO = E5` | `LORA_RADIO = SX1262` |
+| Risk | proven firmware | this project's own stack |
+
+The E5 is still the lower-risk board — its stack is certified and has
+shipped in thousands of products. But the SX1262 works, and the choice
+is one line in `.env`.
+
+### Why the SX1262 path uses ABP
+
+An OTAA join means catching the join-accept in a window that opens 5 s
+after transmitting and lasts milliseconds. MicroPython's garbage
+collector can pause straight through it. **ABP has no join at all**, and
+Class C leaves the receiver open continuously — so nothing in the whole
+path is timing-critical, which is what makes a Python implementation
+sane rather than heroic.
+
+The cost is frame counters: ABP gives the network no way to resync, so
+it drops any uplink whose counter it has seen. The firmware reserves
+counters in blocks and persists them **before** transmitting, so a power
+cut skips forward rather than repeating. If you ever reset the counter
+in the TTN console, delete `lorawan_fcnt.json` from the lamp to match.
+
+### SPI wiring for the Wio-SX1262
+
+```
+XIAO            Wio-SX1262
+D8  / GPIO7 ──► SCK        D10 / GPIO9 ──► MOSI
+D9  / GPIO8 ◄── MISO       D3  / GPIO4 ──► NSS
+D2  / GPIO3 ──► RST        D1  / GPIO2 ◄── BUSY
+D0  / GPIO1 ◄── DIO1
+```
+
+All eight pins are set in `config.py`; those are only defaults.
+
 ## Antenna
 
 The Wio-E5 ships with a small antenna, which is fine to start. Before

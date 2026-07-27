@@ -57,9 +57,29 @@ LAMP_NAME = "{name}"
 
 # ── LoRaWAN (The Things Network) ────────────────────────────
 LORA_ENABLED = True
+LORA_RADIO   = "{radio}"             # E5 (AT + OTAA) or SX1262 (ABP)
+
+# OTAA, used when LORA_RADIO is "E5"
 LORA_DEV_EUI = "{dev_eui}"          # unique to this lamp
 LORA_APP_EUI = "{join_eui}"          # SAME on both lamps
 LORA_APP_KEY = "{app_key}"
+
+# ABP session, used when LORA_RADIO is "SX1262"
+LORA_DEV_ADDR = "{dev_addr}"
+LORA_NWK_SKEY = "{nwk_skey}"
+LORA_APP_SKEY = "{app_skey}"
+LORA_SF       = 9                    # must match RX2 on your plan
+LORA_TX_POWER = 14                   # dBm, EU868 ceiling
+
+# SPI to the Wio-SX1262
+SX_SPI_ID    = 1
+SX_SCK_PIN   = 7
+SX_MOSI_PIN  = 9
+SX_MISO_PIN  = 8
+SX_NSS_PIN   = 4
+SX_RESET_PIN = 3
+SX_BUSY_PIN  = 2
+SX_DIO1_PIN  = 1
 LORA_REGION  = "{region}"
 LORA_CLASS   = "C"                   # mains-powered: listens continuously
 LORA_PORT    = 8
@@ -141,16 +161,33 @@ def main():
             missing.append(key)
         return v
 
-    join_eui = need("JOIN_EUI")
+    radio = (env.get("LORA_RADIO", "").strip() or "E5").upper()
+    abp = radio.startswith("SX")
+
     lamps = []
-    for n in (1, 2):
-        lamps.append({
-            "n": n,
-            # Optional and cosmetic — it only shows up in the SSID.
-            "name": env.get("LAMP%d_NAME" % n, "").strip(),
-            "dev_eui": need("LAMP%d_DEV_EUI" % n),
-            "app_key": need("LAMP%d_APP_KEY" % n),
-        })
+    if abp:
+        # ABP: a session, not a join. Different three values per lamp.
+        join_eui = "0000000000000000"
+        for n in (1, 2):
+            lamps.append({
+                "n": n,
+                "name": env.get("LAMP%d_NAME" % n, "").strip(),
+                "dev_addr": need("LAMP%d_DEV_ADDR" % n),
+                "nwk_skey": need("LAMP%d_NWK_SKEY" % n),
+                "app_skey": need("LAMP%d_APP_SKEY" % n),
+                "dev_eui": "", "app_key": "",
+            })
+    else:
+        join_eui = need("JOIN_EUI")
+        for n in (1, 2):
+            lamps.append({
+                "n": n,
+                # Optional and cosmetic — it only shows up in the SSID.
+                "name": env.get("LAMP%d_NAME" % n, "").strip(),
+                "dev_eui": need("LAMP%d_DEV_EUI" % n),
+                "app_key": need("LAMP%d_APP_KEY" % n),
+                "dev_addr": "", "nwk_skey": "", "app_skey": "",
+            })
 
     if missing:
         print("\n  .env is missing values:\n")
@@ -161,10 +198,15 @@ def main():
         return 1
 
     # ── Shape ──
-    for label, value, length in (
-            [("JOIN_EUI", join_eui, 16)] +
-            [("LAMP%d_DEV_EUI" % l["n"], l["dev_eui"], 16) for l in lamps] +
-            [("LAMP%d_APP_KEY" % l["n"], l["app_key"], 32) for l in lamps]):
+    if abp:
+        shapes = ([("LAMP%d_DEV_ADDR" % l["n"], l["dev_addr"], 8) for l in lamps]
+                  + [("LAMP%d_NWK_SKEY" % l["n"], l["nwk_skey"], 32) for l in lamps]
+                  + [("LAMP%d_APP_SKEY" % l["n"], l["app_skey"], 32) for l in lamps])
+    else:
+        shapes = ([("JOIN_EUI", join_eui, 16)]
+                  + [("LAMP%d_DEV_EUI" % l["n"], l["dev_eui"], 16) for l in lamps]
+                  + [("LAMP%d_APP_KEY" % l["n"], l["app_key"], 32) for l in lamps])
+    for label, value, length in shapes:
         if len(value) != length or not HEX.match(value):
             problems.append("%s must be %d hex characters (got %d: %r)"
                             % (label, length, len(value), value))
@@ -172,12 +214,15 @@ def main():
             problems.append("%s is all zeros" % label)
 
     # ── The pair ──
-    if lamps[0]["dev_eui"].upper() == lamps[1]["dev_eui"].upper():
+    ident = "dev_addr" if abp else "dev_eui"
+    secret = "app_skey" if abp else "app_key"
+    if lamps[0][ident].upper() == lamps[1][ident].upper():
         problems.append(
-            "Both lamps have the same DevEUI. Each device needs its own, "
-            "or they fight over one session and neither stays joined.")
-    if lamps[0]["app_key"].upper() == lamps[1]["app_key"].upper():
-        problems.append("Both lamps have the same AppKey. Generate two.")
+            "Both lamps have the same %s. Each device needs its own, or "
+            "they fight over one session and neither stays connected."
+            % ("DevAddr" if abp else "DevEUI"))
+    if lamps[0][secret].upper() == lamps[1][secret].upper():
+        problems.append("Both lamps have the same session key. Use two.")
 
     password = env.get("PORTAL_PASSWORD", "").strip()
     if password and len(password) < 8:
@@ -224,6 +269,10 @@ def main():
                 wifi_enabled=bool(wifi_ssid),
                 wifi_networks=repr([[wifi_ssid, wifi_pass]]) if wifi_ssid
                 else "[]",
+                radio=radio,
+                dev_addr=lamp["dev_addr"].upper(),
+                nwk_skey=lamp["nwk_skey"].upper(),
+                app_skey=lamp["app_skey"].upper(),
                 ssid=ssid, portal_password=ssid_pw,
                 num_leds=num_leds, led_order=led_order,
                 num_groups=num_groups, group_max=max(1, num_leds // 2),

@@ -190,22 +190,48 @@ def build_transports(tick=None):
     router = Router()
 
     if _cfg("LORA_ENABLED", False):
+        # Two radios, one interface. The Wio-E5 runs a LoRaWAN stack in
+        # its own firmware and speaks AT commands; the SX1262 is a bare
+        # radio, so the stack runs here instead. Nothing above this line
+        # can tell the difference.
+        radio_kind = _cfg("LORA_RADIO", "E5").upper()
         try:
-            from machine import UART, Pin
-            from net.lorawan_e5 import LoRaWANE5
-            uart = UART(_cfg("LORA_UART_ID", 1),
-                        baudrate=_cfg("LORA_BAUD", 9600),
-                        tx=Pin(_cfg("LORA_TX_PIN", 43)),
-                        rx=Pin(_cfg("LORA_RX_PIN", 44)))
-            lora = LoRaWANE5(
-                uart,
-                _cfg("LORA_DEV_EUI", ""), _cfg("LORA_APP_EUI", ""),
-                _cfg("LORA_APP_KEY", ""),
-                region=_cfg("LORA_REGION", "EU868"),
-                lora_class=_cfg("LORA_CLASS", "C"),
-                port=_cfg("LORA_PORT", 8),
-                min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
-                                     3 * 60 * 60 * 1000))
+            if radio_kind.startswith("SX"):
+                from net.sx1262 import SX1262
+                from net.lorawan_abp import LoRaWANABP
+                radio = SX1262(
+                    spi_id=_cfg("SX_SPI_ID", 1),
+                    sck=_cfg("SX_SCK_PIN", 7), mosi=_cfg("SX_MOSI_PIN", 9),
+                    miso=_cfg("SX_MISO_PIN", 8), nss=_cfg("SX_NSS_PIN", 4),
+                    reset=_cfg("SX_RESET_PIN", 3), busy=_cfg("SX_BUSY_PIN", 2),
+                    dio1=_cfg("SX_DIO1_PIN", 1))
+                from net.lorawan_abp import _hex
+                lora = LoRaWANABP(
+                    radio,
+                    _hex(_cfg("LORA_DEV_ADDR", ""), 4),
+                    _hex(_cfg("LORA_NWK_SKEY", ""), 16),
+                    _hex(_cfg("LORA_APP_SKEY", ""), 16),
+                    port=_cfg("LORA_PORT", 8),
+                    sf=_cfg("LORA_SF", 9),
+                    tx_power=_cfg("LORA_TX_POWER", 14),
+                    min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
+                                         3 * 60 * 60 * 1000))
+            else:
+                from machine import UART, Pin
+                from net.lorawan_e5 import LoRaWANE5
+                uart = UART(_cfg("LORA_UART_ID", 1),
+                            baudrate=_cfg("LORA_BAUD", 9600),
+                            tx=Pin(_cfg("LORA_TX_PIN", 43)),
+                            rx=Pin(_cfg("LORA_RX_PIN", 44)))
+                lora = LoRaWANE5(
+                    uart,
+                    _cfg("LORA_DEV_EUI", ""), _cfg("LORA_APP_EUI", ""),
+                    _cfg("LORA_APP_KEY", ""),
+                    region=_cfg("LORA_REGION", "EU868"),
+                    lora_class=_cfg("LORA_CLASS", "C"),
+                    port=_cfg("LORA_PORT", 8),
+                    min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
+                                         3 * 60 * 60 * 1000))
             lora.start(tick=tick)
             router.add(lora)
         except Exception as e:

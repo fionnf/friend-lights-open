@@ -12,7 +12,35 @@
 LAMP_ID   = 1
 LAMP_NAME = ""                # optional; appears in the WiFi network name
 
-# ── LoRaWAN (The Things Network) ────────────────────────────
+# ── Which radio ─────────────────────────────────────────────
+# "E5"     Wio-E5 — runs the LoRaWAN stack itself, driven by AT commands
+#          over UART. Nothing to get wrong; uses OTAA.
+# "SX1262" Wio-SX1262 — a bare radio, so the stack runs on the ESP32.
+#          Uses ABP, because an OTAA join needs a receive window opened
+#          5 s after transmitting and held for milliseconds, which
+#          MicroPython's garbage collector can pause straight through.
+LORA_RADIO = "E5"
+
+# ── SX1262 only: ABP session, from the TTN console ──────────
+# Register the device with Activation mode = ABP, then copy these.
+# DevAddr is shown big-endian; the firmware reverses it for the air.
+LORA_DEV_ADDR = ""             # 8 hex characters
+LORA_NWK_SKEY = ""             # 32 hex
+LORA_APP_SKEY = ""             # 32 hex
+LORA_SF       = 9              # must match RX2 on your frequency plan
+LORA_TX_POWER = 14             # dBm; EU868 legal ceiling
+
+# SPI wiring to the Wio-SX1262
+SX_SPI_ID    = 1
+SX_SCK_PIN   = 7
+SX_MOSI_PIN  = 9
+SX_MISO_PIN  = 8
+SX_NSS_PIN   = 4
+SX_RESET_PIN = 3
+SX_BUSY_PIN  = 2
+SX_DIO1_PIN  = 1
+
+# ── E5 only: OTAA keys (The Things Network) ─────────────────
 # Register the device in the TTN console, then paste its values here.
 # Use OTAA. DevEui is per-device; AppEui and AppKey come from the
 # application you registered it under.
