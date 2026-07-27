@@ -30,10 +30,16 @@ LORA_TX_PIN  = 43
 LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
-# How often we may transmit. TTN allows 30 s of airtime per device per
-# day; a 10-byte frame at SF9 costs ~0.2 s, so ~150 uplinks/day exist.
-# 15 minutes spends about half of that and leaves headroom.
-LORA_MIN_INTERVAL_MS = 15 * 60 * 1000
+# How often we may transmit when something has changed.
+#
+# The limit is NOT our own airtime — 30 s/day at ~0.2 s a frame allows
+# about 150 uplinks. The limit is that every uplink the bridge forwards
+# becomes a DOWNLINK on your friend's lamp, and TTN allows each device
+# only TEN downlinks a day. Uplinking more often just means the extra
+# ones are discarded before they reach them.
+#
+# Budget: 2/day for heartbeats + 8/day for changes = 10.
+LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
 
 # ── WiFi (optional) ─────────────────────────────────────────
 # Entirely optional. A lamp with no WiFi works perfectly over LoRa alone;

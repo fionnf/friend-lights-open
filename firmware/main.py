@@ -28,7 +28,11 @@ FIRMWARE_VERSION = "2026-07-27.1"
 FRAME_MS         = 16
 STATE_FILE       = "state.json"
 STATE_FLUSH_MS   = 5 * 60 * 1000
-HEARTBEAT_MS     = 60 * 60 * 1000     # re-send our totals hourly even if idle
+# Every uplink the bridge forwards becomes a DOWNLINK on the peer, and
+# the peer may only receive ten a day. So this is budgeted against the
+# friend's allowance, not our own airtime: 2 heartbeats a day, leaving 8
+# for actual changes. See docs/PROTOCOL.md.
+HEARTBEAT_MS     = 12 * 60 * 60 * 1000
 
 wdt = None
 
@@ -200,7 +204,8 @@ def build_transports(tick=None):
                 region=_cfg("LORA_REGION", "EU868"),
                 lora_class=_cfg("LORA_CLASS", "C"),
                 port=_cfg("LORA_PORT", 8),
-                min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS", 900_000))
+                min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
+                                     3 * 60 * 60 * 1000))
             lora.start(tick=tick)
             router.add(lora)
         except Exception as e:

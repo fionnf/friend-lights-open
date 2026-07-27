@@ -562,15 +562,18 @@ This is the part to explain to whoever you give the second lamp to.
 
 | | Budget |
 |---|---|
-| Uplink airtime | 30 s/day ≈ 150 messages |
+| Uplink airtime | 30 s/day ≈ 150 messages — *not* the limit |
 | **Downlinks** | **10/day** ← the real limit |
 | Payload | 10 bytes |
 | Latency | 2–10 s, plus the deliberate slow fade |
 
-The lamp sends when you touch it — throttled to one message per **15
-minutes**, which spends about half the daily airtime — plus one hourly
-heartbeat so a lamp that missed everything still converges without anyone
-touching anything.
+The catch is that these are *your friend's* ten. Every message you send
+becomes a downlink on their lamp, so however freely your lamp could
+transmit, it must not send more than they can receive.
+
+So the lamp sends at most **ten times a day**: a heartbeat every 12 hours
+so an idle pair still converges, and up to eight change-driven messages,
+throttled to one every three hours.
 
 Touch it twenty times in an evening and your friend does not get twenty
 messages. They get one, containing all twenty, and their lamp pulses to

@@ -14,22 +14,28 @@
 #   3V3      ──► VCC
 #   GND      ──► GND
 #
-# ── Airtime budget ───────────────────────────────────────────────────
-# TTN's Fair Use Policy allows 30 s of uplink airtime per device per day.
-# A 10-byte frame at SF9 costs roughly 0.2 s, so the daily allowance is
-# about 150 uplinks. Spending half of it leaves ~75/day, which is one
-# uplink every ~19 minutes. DEFAULT_MIN_INTERVAL_MS rounds that to 15
-# minutes and leaves headroom for the join and the occasional forced
-# send.
+# ── What actually limits how often we may speak ──────────────────────
+# Not our own airtime. TTN allows 30 s of uplink airtime per device per
+# day and a 10-byte frame at SF9 costs ~0.2 s, so roughly 150 uplinks a
+# day are available. That is not the constraint.
 #
-# This is not a limitation to be worked around. A lamp that changes
-# colour four times an hour is the product.
+# The constraint is the FRIEND's allowance. Every uplink the bridge
+# forwards becomes a downlink on their lamp, and TTN permits each device
+# only TEN downlinks a day. Uplinking more often than that does not send
+# more — it just means the surplus is discarded somewhere between here
+# and them, having cost us the transmission anyway.
+#
+# So the send budget is ten a day, split: two heartbeats (main.py) and up
+# to eight change-driven sends, hence three hours between them.
+#
+# This is not a limitation to be worked around. A lamp that changes a
+# handful of times a day is the product.
 
 import utime
 
 from .transport import Transport
 
-DEFAULT_MIN_INTERVAL_MS = 15 * 60 * 1000
+DEFAULT_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
 JOIN_TIMEOUT_MS         = 90_000
 AT_TIMEOUT_MS           = 3_000
 
