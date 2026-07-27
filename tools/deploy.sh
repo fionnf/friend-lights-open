@@ -3,15 +3,33 @@
 #   ./tools/deploy.sh [port]
 set -euo pipefail
 
-PORT="${1:-/dev/ttyACM0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ ! -f "$ROOT/firmware/config.py" ]; then
-  echo "firmware/config.py is missing." >&2
-  echo "  cp firmware/config.example.py firmware/config.py" >&2
-  echo "then set LAMP_ID and your TTN keys. See the README." >&2
-  exit 1
+LAMP=""
+if [ "${1:-}" = "--lamp" ]; then
+  LAMP="$2"; shift 2
 fi
+PORT="${1:-/dev/ttyACM0}"
+
+# With --lamp N, deploy that lamp's prepared config. Without it, fall back
+# to a single firmware/config.py.
+if [ -n "$LAMP" ]; then
+  CONFIG="$ROOT/firmware/config.lamp$LAMP.py"
+  if [ ! -f "$CONFIG" ]; then
+    echo "No config for lamp $LAMP." >&2
+    echo "  python3 tools/make_config.py --lamp $LAMP" >&2
+    exit 1
+  fi
+else
+  CONFIG="$ROOT/firmware/config.py"
+  if [ ! -f "$CONFIG" ]; then
+    echo "firmware/config.py is missing." >&2
+    echo "  python3 tools/make_config.py        (recommended)" >&2
+    echo "  cp firmware/config.example.py firmware/config.py" >&2
+    exit 1
+  fi
+fi
+echo "config: $(basename "$CONFIG")"
 
 # Never load firmware onto a lamp without running the tests: a LoRa-only
 # lamp has no over-the-air recovery, so a boot loop means USB or the post.
@@ -31,7 +49,8 @@ mp mkdir :lamp/net 2>/dev/null || true
 mp mkdir :lamp/www 2>/dev/null || true
 
 mp cp "$ROOT/firmware/main.py"   :
-mp cp "$ROOT/firmware/config.py" :
+# Always lands on the board as config.py, whichever file it came from.
+mp cp "$CONFIG" :config.py
 for f in "$ROOT"/firmware/lamp/*.py;     do mp cp "$f" :lamp/;     done
 for f in "$ROOT"/firmware/lamp/net/*.py; do mp cp "$f" :lamp/net/; done
 mp cp "$ROOT/firmware/lamp/www/index.html" :lamp/www/

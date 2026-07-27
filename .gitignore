@@ -1,5 +1,6 @@
 # Real credentials live only on the lamp, never in the repo
 firmware/config.py
+firmware/config.lamp*.py
 
 __pycache__/
 *.pyc

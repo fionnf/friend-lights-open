@@ -455,32 +455,38 @@ something.
 ## 5. Configure and load
 
 ```bash
-cp firmware/config.example.py firmware/config.py
+python3 tools/make_config.py --lamp 1
 ```
 
-Edit it:
+It asks for the values you copied from TTN, checks them, and writes
+`firmware/config.lamp1.py` (gitignored — keys never enter the repo). Run
+it again with `--lamp 2` for the other one.
 
-```python
-LAMP_ID   = 1              # 1 on one lamp, 2 on the other — MUST differ
-LAMP_NAME = "Zurich"
+The reason it exists rather than "edit this file": three of the ways to
+get these six values wrong produce a lamp that **joins the network
+perfectly and then does nothing**, with no error anywhere saying why.
 
-LORA_DEV_EUI = "..."       # from the TTN console
-LORA_APP_EUI = "0000000000000000"
-LORA_APP_KEY = "..."
-```
+| Mistake | What you'd see |
+|---|---|
+| Both lamps sharing a **DevEUI** | They fight over one session; neither stays joined |
+| Lamps with **different JoinEUIs** | One never joins at all |
+| Both lamps sharing a **`LAMP_ID`** | Both join fine, then ignore each other forever — the CRDT treats a message bearing your own id as an echo of yourself and drops it |
 
-`LAMP_ID` is the only value that *has* to differ between lamps — the CRDT
-keys on it, and two lamps sharing an ID will silently ignore each other's
-touches. Everything else can be identical.
+So it cross-checks each lamp against the other and refuses to write a
+file that would produce any of those.
 
-`config.py` is gitignored. Keys live on the lamp, never in the repo.
+To load it:
 
 ```bash
-./tools/deploy.sh /dev/ttyACM0
+./tools/deploy.sh --lamp 1 /dev/ttyACM0
 ```
 
-That runs the full test suite first and refuses to load anything if it
-fails — see [Tests](#tests) for why that guard is there.
+That runs the whole test suite first and refuses to deploy if anything
+fails — see [Tests](#tests) for why that guard matters here.
+
+> Prefer to edit by hand? `cp firmware/config.example.py
+> firmware/config.py`, fill it in, and run `./tools/deploy.sh` with no
+> `--lamp`. You lose the cross-checks.
 
 ---
 
