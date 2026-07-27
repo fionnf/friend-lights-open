@@ -645,16 +645,23 @@ friend both lamps will look the same dull warm white. Touch one. Within
 ## Using the lamp
 
 **Tap** the pad — nudges the colour. **Hold 1 second** — power on/off.
-**Hold 5 seconds** — opens the setup portal.
+**Hold 5 seconds** — toggles the control network off or on.
 
 All three fire when you *lift your finger*, not when the timer passes, so
 a long press does exactly one thing.
 
-### The setup portal
+### The control app
 
-Hold the pad for five seconds and the lamp raises **its own WiFi
-network**, called `lamp-1-setup`. Join it from any phone and a page opens
-by itself — colour, brightness, power, and the TTN keys.
+Each lamp runs **its own WiFi network, permanently**:
+
+| | |
+|---|---|
+| Network | `lamp-zurich` / `lamp-cork` (from `LAMP_NAME`) |
+| Password | `lightupleni` — the same on both, set in `config.lampN.py` |
+| Page | opens by itself; otherwise **http://192.168.4.1** |
+
+Colour, brightness, power, and the TTN keys — from any phone, no app to
+install.
 
 Two things make this worth having:
 
@@ -671,11 +678,18 @@ It works on **every phone**, which is why it is an access point and not
 Bluetooth — Web Bluetooth does not exist on iOS in any browser, including
 Chrome and Firefox there, because they are all WebKit underneath.
 
-The network is open, shuts itself off after **five minutes**, and only
-exists while someone is standing next to the lamp holding the pad. Values
-entered there are validated on the lamp, not in the browser, and saved to
-`provision.json` — which takes priority over `config.py`, so a
+Because the network is always up, it is **WPA2 with a password** rather
+than open. Change `PORTAL_PASSWORD` to whatever you like; it must be at
+least 8 characters, because the ESP32 silently ignores anything shorter
+and brings the network up open without telling you. (The firmware
+notices and says so.)
+
+Values entered there are validated on the lamp, not in the browser, and
+saved to `provision.json` — which takes priority over `config.py`, so a
 provisioned lamp keeps its settings through any firmware update.
+
+Set `PORTAL_ALWAYS_ON = False` if you would rather it only appear on a
+5-second hold and shut off after five minutes.
 
 > Your phone will warn that this network has no internet. That's correct
 > — the lamp isn't a router. Stay connected anyway.

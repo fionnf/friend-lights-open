@@ -298,5 +298,49 @@ check("an absurd nudge is clamped", shared.total_touches() - before <= 16,
       shared.total_touches() - before)
 
 
+# ── A short WPA2 password must not silently open the network ─
+# The ESP32 ignores a password under 8 characters and brings the AP up
+# OPEN without reporting it — so the lamp would look protected and not be.
+print("\nportal password")
+
+import network as _net
+from portal import Portal as _P
+
+def ap_of(pw):
+    p = _P(SharedColour(1), FakeEngine(), 1, password=pw, always_on=True)
+    p.start()
+    ap = p._ap
+    p.stop()
+    return ap.cfg
+
+cfg = ap_of("lightupleni")
+check("a good password is applied", cfg.get("password") == "lightupleni", cfg)
+check("and WPA2 is selected", cfg.get("authmode") == _net.AUTH_WPA2_PSK, cfg)
+
+cfg = ap_of("short")
+check("a too-short password is refused, not silently applied",
+      "password" not in cfg, cfg)
+check("and the network is openly declared open",
+      cfg.get("authmode") == 0, cfg)
+
+cfg = ap_of(None)
+check("no password means open", cfg.get("authmode") == 0, cfg)
+
+# Always-on must survive well past the idle timeout.
+p = _P(SharedColour(1), FakeEngine(), 1, password="lightupleni", always_on=True)
+p.start()
+for _ in range(80):
+    utime.sleep_ms(10_000)      # ~13 minutes
+    p.tick()
+check("an always-on portal does not time out", p.active is True)
+
+p2 = _P(SharedColour(1), FakeEngine(), 1, always_on=False)
+p2.start()
+for _ in range(80):
+    utime.sleep_ms(10_000)
+    p2.tick()
+check("an on-demand portal still times out", p2.active is False)
+
+
 print("\n%d failed" % len(failures) if failures else "\nall passed")
 sys.exit(1 if failures else 0)

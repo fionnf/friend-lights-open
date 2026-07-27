@@ -85,14 +85,19 @@ ARRIVAL_FADE_MS = 90 * 1000
 BREATHE_SPEED = 0.0008
 BREATHE_DEPTH = 0.04
 
-# ── Setup portal ────────────────────────────────────────────
-# Hold the touch pad for 5 seconds and the lamp raises its own WiFi
-# network, "lamp-<id>-setup". Join it and a page opens by itself: colour,
-# brightness, power, and the TTN keys.
-#
-# Local control costs nothing — it never spends one of the ten daily
-# messages. The access point shuts itself off after 5 minutes.
-PORTAL_ENABLED = True
+
 
 # ── Watchdog ────────────────────────────────────────────────
+# ── Control network ─────────────────────────────────────────
+# The lamp runs its own WiFi network permanently, so you can control it
+# from a phone at any time without spending one of the ten daily
+# messages. Join "lamp-<name>" and the page opens by itself; if it
+# does not, browse to http://192.168.4.1
+#
+# WPA2 needs at least 8 characters. A shorter one is silently ignored by
+# the ESP32 and you would get an OPEN network without being told.
+PORTAL_ENABLED   = True
+PORTAL_ALWAYS_ON = True
+PORTAL_PASSWORD  = "lightupleni"
+
 WATCHDOG_ENABLED = True

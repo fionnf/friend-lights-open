@@ -31,7 +31,7 @@ except ImportError:
     network = None
 
 AP_IP        = "192.168.4.1"
-IDLE_TIMEOUT = 5 * 60 * 1000        # AP shuts itself off after 5 min
+IDLE_TIMEOUT = 5 * 60 * 1000        # only used when always_on is False
 CONN_TIMEOUT = 5_000                # abandon a half-sent request
 MAX_REQUEST  = 4096                 # refuse anything larger
 
@@ -54,12 +54,21 @@ class Portal:
     """Non-blocking AP + captive portal. Call tick() from the main loop."""
 
     def __init__(self, shared, engine, lamp_id, on_config=None,
-                 page="/lamp/www/index.html"):
+                 page="/lamp/www/index.html", password=None,
+                 always_on=False, ssid=None):
         self.shared = shared
         self.engine = engine
         self.lamp_id = lamp_id
         self.on_config = on_config          # called with a dict when saved
         self.page = page
+        # WPA2 needs 8 characters. Anything shorter is silently refused by
+        # the ESP32 and you get an OPEN network without being told, so it
+        # is better to fall back deliberately and say so.
+        self.password = password if (password and len(password) >= 8) else None
+        if password and not self.password:
+            print("[portal] password under 8 chars — network will be OPEN")
+        self.always_on = always_on
+        self._ssid_override = ssid
         self.active = False
         self.ssid = None
         self._ap = None
@@ -73,14 +82,19 @@ class Portal:
     def start(self):
         if self.active or network is None:
             return False
-        self.ssid = "lamp-%d-setup" % self.lamp_id
+        self.ssid = self._ssid_override or ("lamp-%d" % self.lamp_id)
         try:
             self._ap = network.WLAN(network.AP_IF)
             self._ap.active(True)
-            # Open network deliberately: the alternative is printing a
-            # password on a lamp, and the AP only lives for five minutes
-            # within radio range of whoever pressed the button.
-            self._ap.config(essid=self.ssid, authmode=0)
+            if self.password:
+                # WPA2. With the network up permanently rather than for
+                # five minutes on demand, a password is what keeps it
+                # from being an open door onto the lamp for the street.
+                authmode = getattr(network, "AUTH_WPA2_PSK", 3)
+                self._ap.config(essid=self.ssid, password=self.password,
+                                authmode=authmode)
+            else:
+                self._ap.config(essid=self.ssid, authmode=0)
 
             self._http = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._http.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -95,7 +109,10 @@ class Portal:
 
             self.active = True
             self._deadline = utime.ticks_add(utime.ticks_ms(), IDLE_TIMEOUT)
-            print("[portal] up — join WiFi '%s'" % self.ssid)
+            print("[portal] up — join WiFi '%s'%s then open http://%s"
+                  % (self.ssid,
+                     " (password set)" if self.password else " (open)",
+                     AP_IP))
             return True
         except Exception as e:
             print("[portal] failed to start: %s" % e)
@@ -131,7 +148,7 @@ class Portal:
         if not self.active:
             return
         now = utime.ticks_ms()
-        if utime.ticks_diff(now, self._deadline) >= 0:
+        if not self.always_on and utime.ticks_diff(now, self._deadline) >= 0:
             print("[portal] idle timeout")
             self.stop()
             return

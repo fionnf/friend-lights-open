@@ -345,7 +345,15 @@ def main():
         restart_at[0] = utime.ticks_add(utime.ticks_ms(), 2_000)
         return True
 
-    portal = Portal(shared, engine, lamp_id, on_config=on_config)
+    name = _cfg("LAMP_NAME", "")
+    portal = Portal(
+        shared, engine, lamp_id, on_config=on_config,
+        password=_cfg("PORTAL_PASSWORD", None),
+        always_on=_cfg("PORTAL_ALWAYS_ON", True),
+        ssid=("lamp-%s" % name.lower().replace(" ", "-")) if name
+             else "lamp-%d" % lamp_id)
+    if _cfg("PORTAL_ENABLED", True) and _cfg("PORTAL_ALWAYS_ON", True):
+        portal.start()
 
     def current_frame(touched=False):
         h, w, t = shared.my_totals()
