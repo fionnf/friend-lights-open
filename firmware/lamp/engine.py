@@ -26,16 +26,6 @@ PULSE_MS    = 700
 PULSE_DEPTH = 0.35
 
 
-def _shortest_delta(current, target):
-    """Signed distance around a circle, in (-0.5, 0.5].
-
-    Hue wraps, so fading from 0.95 to 0.05 must travel 0.1 forwards
-    through the wrap point, not 0.9 backwards through every other colour
-    on the wheel.
-    """
-    return (target - current + 0.5) % 1.0 - 0.5
-
-
 class Engine:
 
     def __init__(self, shared, num_leds, brightness=0.6,
@@ -52,12 +42,13 @@ class Engine:
         # Displayed values chase the agreed ones. Seeded from the agreed
         # state so a reboot comes back at the right colour rather than
         # sweeping to it from warm white.
-        self._hue = shared.hue()
+        self._hue = shared.position()
         self._warmth = shared.warmth()
 
         # Max distance on the wheel is 0.5, so this is the worst-case
         # arrival time; nearer colours land sooner.
-        self._hue_rate = 0.5 / max(1, arrival_fade_ms)
+        # Full travel of the palette in one arrival time.
+        self._hue_rate = 1.0 / max(1, arrival_fade_ms)
         self._warm_rate = 1.0 / max(1, arrival_fade_ms)
 
         self._breathe_speed = breathe_speed
@@ -159,14 +150,20 @@ class Engine:
     # ── Internal ────────────────────────────────────────────
 
     def _chase(self, dt):
-        """Move the displayed colour toward the agreed one, slowly."""
-        target_hue = self.shared.hue()
-        delta = _shortest_delta(self._hue, target_hue)
+        """Move the displayed colour toward the agreed one, slowly.
+
+        Straight-line, not shortest-way-round: palette position is not a
+        circle. 0.0 is warm white and 1.0 is fully saturated, so there is
+        no short cut between them — travelling "the other way" would mean
+        sweeping through every colour to reach the neighbour of white.
+        """
+        target_pos = self.shared.position()
+        delta = target_pos - self._hue
         step = self._hue_rate * dt
         if abs(delta) <= step:
-            self._hue = target_hue
+            self._hue = target_pos
         else:
-            self._hue = (self._hue + (step if delta > 0 else -step)) % 1.0
+            self._hue += step if delta > 0 else -step
 
         target_warm = self.shared.warmth()
         d = target_warm - self._warmth

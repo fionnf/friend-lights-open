@@ -147,19 +147,61 @@ class SharedColour:
 
     # ── Derived colour ──────────────────────────────────────
 
-    def hue(self):
-        """Agreed palette position, 0.0-1.0, wrapping around the wheel."""
-        return _wrap(sum(self._hue.values())) / COUNTER_MODULO
+    def position(self):
+        """Agreed palette position, 0.0-1.0. See palette.py.
+
+        A triangle rather than a raw wrap. In the original project `pos`
+        couples hue and saturation, so 0.0 is pure warm white and 1.0 is
+        fully saturated — the two ends are nothing alike, and a wrapping
+        counter would snap from vivid straight back to white. Folding it
+        back instead keeps the counter monotonic (so it still converges)
+        while the light only ever drifts.
+
+        It also means a lamp whose counters are zero — brand new, or just
+        restored from nothing — is warm white, with no special case.
+        """
+        return _triangle(sum(self._hue.values()))
+
+    # The colour engine and the page both called this `hue` first.
+    hue = position
 
     def warmth(self):
-        """Agreed warm-white level, 0.0-1.0, oscillating not wrapping."""
-        return _triangle(sum(self._warm.values()))
+        """The warm-white trim, 0.0-1.0 — the original's per-group `w`.
+
+        Inverted so a counter of zero means 1.0, i.e. full warm white.
+        Seeding the counter instead would not work: both lamps would seed
+        the same value, and two half-turns sum to a whole one, landing
+        straight back on zero.
+        """
+        return 1.0 - _triangle(sum(self._warm.values()))
 
     def total_touches(self):
         """Every touch by every lamp. Drives the 'while you were out'
         playback — the difference between two readings is how many times
         someone reached for their lamp since you last looked."""
         return _wrap(sum(self._touch.values()))
+
+    def delta_to_position(self, target):
+        """The increment that would put position() at `target`.
+
+        The page can only ask for "make it this colour", but the CRDT can
+        only ever ADD. Because position is a triangle, two different sums
+        give the same position — one on the way up, one on the way down —
+        so this picks whichever is the shorter move from where we are.
+        Anything else would make the slider lurch the long way round.
+        """
+        target = max(0.0, min(1.0, float(target)))
+        current = _wrap(sum(self._hue.values()))
+        up = int(target * HALF_MODULO)                 # ascending branch
+        down = _wrap(COUNTER_MODULO - up)              # descending branch
+        best = None
+        for candidate in (up, down):
+            d = _wrap(candidate - current)
+            if d > HALF_MODULO:
+                d -= COUNTER_MODULO                    # shorter going back
+            if best is None or abs(d) < abs(best):
+                best = d
+        return best
 
     # ── Wire helpers ────────────────────────────────────────
 

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "firmware"))
 
 import utime
 import codec
-from shared_state import SharedColour
+from shared_state import SharedColour, COUNTER_MODULO
 from net.transport import Transport, Router
 
 failures = []
@@ -342,37 +342,120 @@ for _ in range(80):
 check("an on-demand portal still times out", p2.active is False)
 
 
-# ── The number in the SSID must match LAMP_ID ────────────────
-# You pick a network by its name on a phone. If the number in it does not
-# match the lamp it belongs to, you confidently configure the wrong lamp.
-print("\nssid matches lamp id")
+# ── The generated pair must be a working pair ────────────────
+# Three ways to get six values wrong give you lamps that join the network
+# perfectly and then do nothing, with no error anywhere: a shared DevEUI,
+# mismatched JoinEUIs, or a shared LAMP_ID (the CRDT drops a message
+# bearing your own id as an echo of yourself). The generator must refuse
+# all three, and what it does write must be a usable pair.
+print("\nconfigs generated from .env")
 
-import re as _re
+import subprocess, re as _re
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-for _n in (1, 2):
-    _path = os.path.join(_root, "firmware", "config.lamp%d.py" % _n)
-    if not os.path.exists(_path):
-        continue
-    _ns = {}
-    exec(open(_path).read(), _ns)
-    _ssid = _ns.get("PORTAL_SSID", "")
-    check("lamp%d SSID is at most 32 chars" % _n, len(_ssid) <= 32,
-          "%d: %s" % (len(_ssid), _ssid))
-    _nums = _re.findall(r"\d+", _ssid)
-    check("lamp%d SSID carries its own id (%s)" % (_n, _ssid),
-          str(_ns["LAMP_ID"]) in _nums,
-          "LAMP_ID=%s but SSID says %s" % (_ns["LAMP_ID"], _nums))
-    check("lamp%d password is long enough for WPA2" % _n,
-          len(_ns.get("PORTAL_PASSWORD") or "") >= 8,
-          "short passwords silently open the network")
+_env = os.path.join(_root, ".env")
+_cfgs = [os.path.join(_root, "firmware", "config.lamp%d.py" % n) for n in (1, 2)]
 
-_a, _b = {}, {}
-exec(open(os.path.join(_root, "firmware", "config.lamp1.py")).read(), _a)
-exec(open(os.path.join(_root, "firmware", "config.lamp2.py")).read(), _b)
-check("the two lamps have different SSIDs",
-      _a["PORTAL_SSID"] != _b["PORTAL_SSID"])
-check("...and different LAMP_IDs", _a["LAMP_ID"] != _b["LAMP_ID"])
-check("...and the same JoinEUI", _a["LORA_APP_EUI"] == _b["LORA_APP_EUI"])
+if os.path.exists(_env) or any(os.path.exists(c) for c in _cfgs):
+    # Never overwrite somebody's real keys just to run a test.
+    print("  SKIP  .env or a lamp config already exists — not touching them")
+else:
+    _GOOD = """
+LAMP1_NAME = Zurich
+LAMP1_DEV_EUI = 70B3D57ED0061111
+LAMP1_APP_KEY = 0123456789ABCDEF0123456789ABCDEF
+LAMP2_NAME = Cork
+LAMP2_DEV_EUI = 70B3D57ED0062222
+LAMP2_APP_KEY = FEDCBA9876543210FEDCBA9876543210
+JOIN_EUI = 0011223344556677
+PORTAL_PASSWORD = lightupleni
+"""
+
+    def _run(text):
+        open(_env, "w").write(text)
+        r = subprocess.run([sys.executable,
+                            os.path.join(_root, "tools", "apply_env.py")],
+                           capture_output=True, text=True)
+        return r.returncode, r.stdout + r.stderr
+
+    def _cleanup():
+        for f in [_env] + _cfgs:
+            if os.path.exists(f):
+                os.remove(f)
+
+    try:
+        code, out = _run(_GOOD)
+        check("a good .env writes both configs", code == 0, out.strip()[:160])
+
+        cfg = []
+        for c in _cfgs:
+            ns = {}
+            exec(open(c).read(), ns)
+            cfg.append(ns)
+
+        check("lamp ids differ", cfg[0]["LAMP_ID"] != cfg[1]["LAMP_ID"])
+        check("DevEUIs differ",
+              cfg[0]["LORA_DEV_EUI"] != cfg[1]["LORA_DEV_EUI"])
+        check("AppKeys differ", cfg[0]["LORA_APP_KEY"] != cfg[1]["LORA_APP_KEY"])
+        check("JoinEUI is shared",
+              cfg[0]["LORA_APP_EUI"] == cfg[1]["LORA_APP_EUI"])
+        for i, ns in enumerate(cfg, 1):
+            ssid = ns["PORTAL_SSID"]
+            check("lamp%d SSID fits 32 bytes" % i, len(ssid) <= 32, ssid)
+            check("lamp%d SSID names its own id (%s)" % (i, ssid),
+                  str(ns["LAMP_ID"]) in _re.findall(r"\d+", ssid), ssid)
+            check("lamp%d password survives WPA2's minimum" % i,
+                  len(ns["PORTAL_PASSWORD"]) >= 8)
+
+        os.remove(_cfgs[0]); os.remove(_cfgs[1])
+        code, out = _run(_GOOD.replace("70B3D57ED0062222", "70B3D57ED0061111"))
+        check("a shared DevEUI is refused", code != 0)
+        check("...and nothing was written",
+              not any(os.path.exists(c) for c in _cfgs))
+
+        code, out = _run(_GOOD.replace("lightupleni", "short"))
+        check("a password WPA2 would silently ignore is refused", code != 0)
+
+        code, out = _run(_GOOD.replace("LAMP1_APP_KEY = 0123456789ABCDEF0123456789ABCDEF",
+                                       "LAMP1_APP_KEY ="))
+        check("a missing AppKey is refused", code != 0)
+    finally:
+        _cleanup()
+
+
+# ── A new lamp is warm white, not saturated yellow ───────────
+# warmth() ran 0 -> "no warm white at all", so a lamp out of the box, or
+# one that had just lost its counters, glowed hard yellow. Seeding the
+# counter cannot fix it: both lamps seed the same value, and two half
+# turns sum to a whole one, which lands back on zero.
+print("\na fresh lamp is warm white")
+
+import palette as _pal
+
+_s = SharedColour(1)
+check("fresh position is 0.0 — warm white in the original's palette",
+      _s.position() == 0.0, _s.position())
+check("fresh warm trim is full", _s.warmth() == 1.0, _s.warmth())
+_r, _g, _b, _w = _pal.rgbw(_s.position(), _s.warmth())
+check("fresh lamp drives the white channel", _w > 150, (_r, _g, _b, _w))
+check("and barely any colour", _r + _g + _b == 0, (_r, _g, _b))
+
+# Two lamps that have never spoken must agree, and both be warm white.
+_a2, _b2 = SharedColour(1), SharedColour(2)
+check("two fresh lamps agree",
+      _a2.position() == _b2.position() == 0.0 and
+      _a2.warmth() == _b2.warmth() == 1.0)
+
+# It must still move, and still be smooth across the wrap.
+_s.nudge(warm=COUNTER_MODULO // 2)
+check("warmth still moves", _s.warmth() < 0.05, _s.warmth())
+_vals = []
+_v2 = SharedColour(1)
+for _ in range(64):
+    _v2.nudge(warm=COUNTER_MODULO // 32)
+    _vals.append(_v2.warmth())
+check("warmth stays in range", all(0.0 <= v <= 1.0 for v in _vals))
+check("warmth is still continuous across the wrap",
+      max(abs(_vals[i] - _vals[i-1]) for i in range(1, len(_vals))) < 0.15)
 
 
 print("\n%d failed" % len(failures) if failures else "\nall passed")

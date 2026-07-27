@@ -1,12 +1,9 @@
-# Real credentials live only on the lamp, never in the repo
-# The file that lands on the board.
-firmware/config.py
+# Every secret lives in .env, and nowhere else.
+.env
 
-# config.lamp1.py / config.lamp2.py ARE tracked, with placeholder keys, so
-# they exist for you ready-made. Once you paste real values in, keep them
-# out of git:
-#     git update-index --skip-worktree firmware/config.lamp1.py
-#     git update-index --skip-worktree firmware/config.lamp2.py
+# Generated from .env by tools/apply_env.py — never committed.
+firmware/config.py
+firmware/config.lamp*.py
 
 __pycache__/
 *.pyc

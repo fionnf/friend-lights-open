@@ -49,7 +49,7 @@ not a router. Stay connected anyway.
 | 2 | Flash MicroPython | one USB cable |
 | 3 | Set up The Things Network | free; a glossary comes first |
 | 4 | Deploy the bridge | 40 lines, pasted into Cloudflare |
-| 5 | Configure and load | `./tools/deploy.sh --lamp 1` |
+| 5 | Configure and load | `cp .env.example .env`, fill it in, `tools/apply_env.py` |
 | 6 | First light | |
 
 **Check coverage before you order anything.** Look up both addresses on
@@ -58,6 +58,20 @@ at either end means none of this works, and no antenna will fix it.
 
 You can prove everything except the radio with a laptop while you wait
 for parts — **→ [docs/TESTING.md](docs/TESTING.md)**.
+
+---
+
+## Your keys live in one file
+
+```bash
+cp .env.example .env       # fill in six values from the TTN console
+python3 tools/apply_env.py # writes both lamp configs
+```
+
+`.env` is gitignored, and so are the configs it generates — there is no
+file you have to remember not to commit. It refuses to write anything
+that would produce a broken pair: a shared DevEUI, mismatched JoinEUIs,
+or a password WPA2 would silently ignore.
 
 ---
 
@@ -170,18 +184,19 @@ A phone hotspot counts, on iPhone and Android alike.
 ```
 firmware/
 ├── main.py                 # the loop
-├── config.lamp1.py         # ready to fill in — DevEUI and AppKey only
-├── config.lamp2.py
+├── config.lamp*.py         # generated from .env, never committed
 └── lamp/
     ├── shared_state.py     # the CRDT — the heart of the project
     ├── codec.py            # the 10-byte wire format
     ├── engine.py           # slow arrival, breathing, pulses
-    ├── palette.py  driver.py  touch.py
+    ├── palette.py          # the original project's palette, unchanged
+    ├── driver.py  touch.py
     ├── portal.py           # the control network + page
     ├── www/index.html
     └── net/                # transport.py, lorawan_e5.py, mqtt_wifi.py
 bridge/worker.js            # uplink -> the other lamp's downlink
-tools/                      # deploy, simulate, test the bridge
+tools/                      # apply_env, deploy, simulate, preview, test
+.env                        # every secret, in one gitignored file
 tests/                      # five suites, no dependencies
 docs/
 ```
