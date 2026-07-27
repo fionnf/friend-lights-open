@@ -1,0 +1,6 @@
+# Real credentials live only on the lamp, never in the repo
+firmware/config.py
+
+__pycache__/
+*.pyc
+.DS_Store

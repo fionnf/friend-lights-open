@@ -1,0 +1,193 @@
+# ============================================================
+#  shared_state.py  —  The colour both lamps agree on
+# ============================================================
+# The Things Network's Fair Use Policy allows a device to RECEIVE ten
+# downlink messages per day. Ten. That single number decides the whole
+# design of this file.
+#
+# A conventional "send the new colour, other lamp applies it" protocol
+# cannot survive that. Miss a message — and you will miss most of them —
+# and the two lamps disagree forever, with no way to notice or recover.
+#
+# So the lamps do not exchange colours. Each lamp owns one grow-only
+# counter and only ever increments its OWN. The displayed colour is a
+# function of the SUM of every lamp's counter. This is a G-Counter CRDT,
+# and it buys three properties that matter here:
+#
+#   1. ORDER-INDEPENDENT. Addition commutes, so messages arriving out of
+#      order converge to the same colour.
+#   2. SELF-HEALING. Each message carries the sender's running TOTAL, not
+#      a delta. A lost message is repaired by the next one — no
+#      retransmission, no acknowledgement, no sequence numbers.
+#   3. BATCHABLE FOR FREE. Ten touches collapse into one downlink with no
+#      information lost, because the total already contains them.
+#
+# The last one is what makes ten downlinks a day survivable rather than
+# crippling. The network's meanest constraint costs us nothing.
+#
+# ── Why wrapping counters are safe ──────────────────────────────────
+# The counters are uint16 and wrap at 65536. For hue that is not a
+# compromise, it is the point: hue is a circle, so a wrapping counter IS
+# the colour wheel. Warmth is not circular, so its counter is mapped
+# through a triangle wave — it rises, then falls, and never jumps.
+#
+# Wrapping does mean the state is only convergent so long as no lamp
+# silently races more than a full revolution ahead of the other between
+# messages. At the touch step sizes below that is thousands of touches
+# between two downlinks, which the airtime budget makes impossible.
+
+COUNTER_MODULO = 0x10000
+HALF_MODULO    = COUNTER_MODULO // 2
+
+# One touch advances the hue by 1/16 of the wheel, so a run of sixteen
+# taps travels right around it. Tuned for feel, not for maths.
+TOUCH_HUE_STEP  = COUNTER_MODULO // 16
+TOUCH_WARM_STEP = COUNTER_MODULO // 24
+
+
+def _wrap(n):
+    return int(n) % COUNTER_MODULO
+
+
+def _triangle(counter):
+    """Map a wrapping counter to 0.0-1.0 and back again.
+
+    Used for anything that is a range rather than a circle. A raw
+    wrapping counter would snap from 1.0 to 0.0 at the wrap point; a
+    triangle reverses direction instead, so the value oscillates
+    smoothly while the counter underneath stays monotonic (and therefore
+    still converges).
+    """
+    c = _wrap(counter)
+    if c < HALF_MODULO:
+        return c / HALF_MODULO
+    return (COUNTER_MODULO - c) / HALF_MODULO
+
+
+class SharedColour:
+    """The colour agreed between every lamp in a group.
+
+    Each lamp constructs this with its own id. It increments only its own
+    counter (via touch/nudge) and folds in whatever it hears from peers
+    (via apply_remote). Every lamp that has heard the same set of
+    messages — in any order, with any duplicates — computes the same
+    colour.
+    """
+
+    def __init__(self, lamp_id):
+        if not (1 <= int(lamp_id) <= 255):
+            raise ValueError("lamp_id must be 1-255")
+        self.lamp_id = int(lamp_id)
+        # lamp_id -> counters. Our own entry is authoritative and only we
+        # may write it; peers' entries are only ever overwritten by their
+        # own messages.
+        self._hue   = {self.lamp_id: 0}
+        self._warm  = {self.lamp_id: 0}
+        self._touch = {self.lamp_id: 0}
+        # Peer metadata, not part of the convergent state
+        self.peer_on = {}
+        self.peer_brightness = {}
+
+    # ── Local input ─────────────────────────────────────────
+
+    def touch(self, steps=1):
+        """A physical touch on THIS lamp. Advances our own counters."""
+        self.nudge(hue=TOUCH_HUE_STEP * steps,
+                   warm=TOUCH_WARM_STEP * steps,
+                   touches=steps)
+
+    def nudge(self, hue=0, warm=0, touches=0):
+        """Advance our own counters by arbitrary amounts.
+
+        Only ever called for our own lamp_id — that invariant is what
+        makes the merge safe. Increments are non-negative by convention;
+        a negative one still converges but makes the counter no longer
+        grow-only, so peers could see it go backwards.
+        """
+        me = self.lamp_id
+        self._hue[me]   = _wrap(self._hue[me] + hue)
+        self._warm[me]  = _wrap(self._warm[me] + warm)
+        self._touch[me] = _wrap(self._touch[me] + touches)
+
+    # ── Remote input ────────────────────────────────────────
+
+    def apply_remote(self, lamp_id, hue_total, warm_total, touch_count,
+                     on=None, brightness=None):
+        """Fold in a peer's reported totals.
+
+        Returns True if this changed anything — callers use that to
+        decide whether to start a fade, so a duplicate frame does not
+        restart an in-progress transition.
+
+        A message claiming to be from us is ignored: we are the only
+        authority on our own counter, and accepting an echo of our own
+        state would let a repeater roll us backwards.
+        """
+        lamp_id = int(lamp_id)
+        if lamp_id == self.lamp_id:
+            return False
+
+        hue   = _wrap(hue_total)
+        warm  = _wrap(warm_total)
+        touch = _wrap(touch_count)
+
+        changed = (self._hue.get(lamp_id)   != hue or
+                   self._warm.get(lamp_id)  != warm or
+                   self._touch.get(lamp_id) != touch)
+
+        self._hue[lamp_id]   = hue
+        self._warm[lamp_id]  = warm
+        self._touch[lamp_id] = touch
+
+        if on is not None:
+            self.peer_on[lamp_id] = bool(on)
+        if brightness is not None:
+            self.peer_brightness[lamp_id] = float(brightness)
+        return changed
+
+    # ── Derived colour ──────────────────────────────────────
+
+    def hue(self):
+        """Agreed palette position, 0.0-1.0, wrapping around the wheel."""
+        return _wrap(sum(self._hue.values())) / COUNTER_MODULO
+
+    def warmth(self):
+        """Agreed warm-white level, 0.0-1.0, oscillating not wrapping."""
+        return _triangle(sum(self._warm.values()))
+
+    def total_touches(self):
+        """Every touch by every lamp. Drives the 'while you were out'
+        playback — the difference between two readings is how many times
+        someone reached for their lamp since you last looked."""
+        return _wrap(sum(self._touch.values()))
+
+    # ── Wire helpers ────────────────────────────────────────
+
+    def my_totals(self):
+        """Our own counters, for encoding into an uplink."""
+        me = self.lamp_id
+        return (self._hue[me], self._warm[me], self._touch[me])
+
+    def snapshot(self):
+        """Full convergent state — for persisting to flash so a reboot
+        does not lose a peer's contribution and undo their colour."""
+        return {"hue":   dict(self._hue),
+                "warm":  dict(self._warm),
+                "touch": dict(self._touch)}
+
+    def restore(self, snap):
+        """Reload a snapshot, tolerating junk on flash."""
+        try:
+            for name, target in (("hue",   self._hue),
+                                 ("warm",  self._warm),
+                                 ("touch", self._touch)):
+                stored = snap.get(name) or {}
+                for k, v in stored.items():
+                    k = int(k)          # JSON turns int keys into strings
+                    if 1 <= k <= 255:
+                        target[k] = _wrap(v)
+            self._hue.setdefault(self.lamp_id, 0)
+            self._warm.setdefault(self.lamp_id, 0)
+            self._touch.setdefault(self.lamp_id, 0)
+        except Exception:
+            pass                        # corrupt state must not block boot
