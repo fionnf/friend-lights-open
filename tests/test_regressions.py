@@ -456,5 +456,49 @@ check("warmth is still continuous across the wrap",
       max(abs(_vals[i] - _vals[i-1]) for i in range(1, len(_vals))) < 0.15)
 
 
+# ── Every LED gets written, whatever the zone layout ─────────
+# A zone list that fell short would leave trailing LEDs showing the last
+# scene — the original hit exactly that, and fixed it by making the final
+# zone absorb the remainder.
+print("\nevery LED is covered")
+
+from engine import Engine as _Eng
+
+
+class _CountingStrip:
+    def __init__(self, n):
+        self.num_leds = n
+        self.written = set()
+        self.brightness = 1.0
+
+    def set(self, i, r=0, g=0, b=0, w=0):
+        assert 0 <= i < self.num_leds, "wrote outside the strip: %d" % i
+        self.written.add(i)
+
+    def set_all(self, r=0, g=0, b=0, w=0):
+        self.written = set(range(self.num_leds))
+
+    def set_brightness(self, v):
+        self.brightness = v
+
+    def show(self):
+        pass
+
+    def off(self):
+        self.set_all()
+
+
+for _leds, _groups in ((10, 3), (1, 1), (7, 5), (24, 4), (5, 9), (60, 6)):
+    _sh = SharedColour(1)
+    _sh.touch(3)
+    _en = _Eng(_sh, _leds, num_groups=_groups,
+               group_max_leds=max(1, _leds // 2))
+    _st = _CountingStrip(_leds)
+    _en.tick(_st)
+    check("%d LEDs in %d zones: every LED written"
+          % (_leds, _groups), len(_st.written) == _leds,
+          "%d of %d" % (len(_st.written), _leds))
+
+
 print("\n%d failed" % len(failures) if failures else "\nall passed")
 sys.exit(1 if failures else 0)

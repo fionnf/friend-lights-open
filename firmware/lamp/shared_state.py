@@ -49,6 +49,21 @@ def _wrap(n):
     return int(n) % COUNTER_MODULO
 
 
+def _mix(seed, salt):
+    """A small deterministic hash to 0.0-1.0.
+
+    Both lamps must compute byte-identical results from the same inputs,
+    so this cannot use urandom, the clock, or anything else that differs
+    between two devices. Integer ops only, masked to 32 bits so
+    MicroPython and CPython agree.
+    """
+    x = (int(seed) * 2654435761 + int(salt) * 2246822519) & 0xFFFFFFFF
+    x ^= x >> 13
+    x = (x * 1274126177) & 0xFFFFFFFF
+    x ^= x >> 16
+    return x / 4294967296.0
+
+
 def _triangle(counter):
     """Map a wrapping counter to 0.0-1.0 and back again.
 
@@ -144,6 +159,60 @@ class SharedColour:
         if brightness is not None:
             self.peer_brightness[lamp_id] = float(brightness)
         return changed
+
+    # ── Groups ──────────────────────────────────────────────
+    # The original project splits the strip into zones, each its own
+    # colour, with sizes reshuffled on every touch. Sending all that
+    # would need a byte or three per group on a link that allows ten
+    # messages a day.
+    #
+    # So it is DERIVED instead. Both lamps run the same tiny hash over
+    # the same agreed counter, so they compute identical zones without a
+    # single extra byte on the wire. Convergence comes for free: same
+    # counter in, same stripe pattern out.
+
+    def group_position(self, index, count, spread=0.35):
+        """Palette position for one zone.
+
+        Zone 0 is the agreed position exactly, so a slider on the page
+        still means what it says. The rest sit around it by a fixed
+        offset that reshuffles whenever the counter moves — which is what
+        makes a touch feel like the original's impulse() rather than the
+        whole strip sliding as one.
+        """
+        base = self.position()
+        if count <= 1 or index <= 0:
+            return base
+        seed = _wrap(sum(self._hue.values()))
+        off = (_mix(seed, index) - 0.5) * spread
+        return max(0.0, min(1.0, base + off))
+
+    def group_sizes(self, num_leds, count, min_leds=1, max_leds=8):
+        """How many LEDs each zone covers. Always sums to num_leds.
+
+        Deterministic from the same counter, so both lamps show the same
+        stripes, and reshuffled on a touch exactly as the original did.
+        """
+        count = max(1, min(int(count), int(num_leds)))
+        if count == 1:
+            return [num_leds]
+        seed = _wrap(sum(self._hue.values()))
+        sizes, remaining = [], num_leds
+        for i in range(count):
+            left = count - i
+            lo = max(min_leds, remaining - (left - 1) * max_leds)
+            hi = min(max_leds, remaining - (left - 1) * min_leds)
+            if left == 1 or lo >= hi:
+                size = max(lo, min(hi, remaining - (left - 1) * min_leds))
+            else:
+                size = lo + int(_mix(seed, 100 + i) * (hi - lo + 1))
+                size = max(lo, min(hi, size))
+            sizes.append(size)
+            remaining -= size
+        # Rounding can leave a LED over; the last zone absorbs it so no
+        # LED is ever left showing a stale colour from the last scene.
+        sizes[-1] += remaining
+        return sizes
 
     # ── Derived colour ──────────────────────────────────────
 

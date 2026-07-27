@@ -274,6 +274,8 @@ class Portal:
             return
 
         if method == "GET" and path == "/state":
+            n = getattr(self.engine, "num_groups", 1)
+            spread = getattr(self.engine, "group_spread", 0.35)
             self._json(conn, {
                 "lamp_id": self.lamp_id,
                 "hue": round(self.shared.hue(), 4),
@@ -281,6 +283,15 @@ class Portal:
                 "touches": self.shared.total_touches(),
                 "brightness": round(self.engine.brightness, 3),
                 "on": self.engine.is_on,
+                "leds": getattr(self.engine, "num_leds", 10),
+                # Zones are derived, not stored, so the page is told the
+                # result rather than made to reimplement the hash.
+                "groups": [round(self.shared.group_position(i, n, spread), 4)
+                           for i in range(n)],
+                "sizes": self.shared.group_sizes(
+                    getattr(self.engine, "num_leds", 10), n,
+                    getattr(self.engine, "group_min_leds", 1),
+                    getattr(self.engine, "group_max_leds", 8)),
             })
             return
 

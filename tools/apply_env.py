@@ -87,10 +87,19 @@ MQTT_PREFIX   = "friendlights_{slug}"
 
 # ── LED strip ───────────────────────────────────────────────
 LED_PIN        = 2                   # data line, via the 330 ohm resistor
-NUM_LEDS       = 10
+NUM_LEDS       = {num_leds}
 LED_BRIGHTNESS = 0.6
-LED_ORDER      = "GRBW"              # "GRB" for WS2812 (no white channel)
+LED_ORDER      = "{led_order}"              # "GRB" for WS2812 (no white)
 REVERSE_LEDS   = False
+
+# ── Colour zones ────────────────────────────────────────────
+# The strip splits into zones, each its own colour, reshuffled on every
+# touch. Both lamps derive identical zones from the shared counter, so
+# this costs nothing on the wire. NUM_GROUPS = 1 for one flat colour.
+NUM_GROUPS     = {num_groups}
+GROUP_MIN_LEDS = 1
+GROUP_MAX_LEDS = {group_max}
+GROUP_SPREAD   = {spread}
 
 # ── Touch ───────────────────────────────────────────────────
 TOUCH_PINS      = [4]                # [] for a lamp with no pad
@@ -184,6 +193,16 @@ def main():
         return 1
 
     ssid_pw = password or "lightupleni"
+
+    def _int(key, default, lo, hi):
+        try:
+            return max(lo, min(hi, int(env.get(key, "") or default)))
+        except ValueError:
+            return default
+
+    num_leds = _int("NUM_LEDS", 10, 1, 300)
+    num_groups = _int("NUM_GROUPS", 3, 1, num_leds)
+    led_order = (env.get("LED_ORDER", "").strip() or "GRBW").upper()
     wifi_ssid = env.get("WIFI_SSID", "").strip()
     wifi_pass = env.get("WIFI_PASSWORD", "").strip()
 
@@ -205,7 +224,10 @@ def main():
                 wifi_enabled=bool(wifi_ssid),
                 wifi_networks=repr([[wifi_ssid, wifi_pass]]) if wifi_ssid
                 else "[]",
-                ssid=ssid, portal_password=ssid_pw))
+                ssid=ssid, portal_password=ssid_pw,
+                num_leds=num_leds, led_order=led_order,
+                num_groups=num_groups, group_max=max(1, num_leds // 2),
+                spread=env.get("GROUP_SPREAD", "0.35") or "0.35"))
         print("  wrote firmware/config.lamp%d.py   %s" % (lamp["n"], ssid))
 
     print("\n  Both configs written from .env. Neither is tracked by git.")

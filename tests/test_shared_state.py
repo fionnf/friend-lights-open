@@ -159,6 +159,57 @@ jumps = [abs(warms[i] - warms[i - 1]) for i in range(1, len(warms))]
 check("warmth never jumps discontinuously", max(jumps) < 0.15, max(jumps))
 
 
+# ── Zones ────────────────────────────────────────────────────
+# The strip splits into zones, each its own colour, as in the original.
+# They are DERIVED from the agreed counter rather than transmitted — so
+# they cost nothing on a link that allows ten messages a day, but they
+# only work if two lamps compute byte-identical results.
+print("\nzones")
+
+za, zb = SharedColour(1), SharedColour(2)
+za.touch(); za.touch(); za.touch()
+gossip(za, zb)
+
+for n in (1, 2, 3, 5, 8):
+    sa = za.group_sizes(10, n)
+    sb = zb.group_sizes(10, n)
+    check("%d zones: both lamps compute the same sizes" % n, sa == sb,
+          "%s vs %s" % (sa, sb))
+    check("%d zones: sizes cover the strip exactly" % n, sum(sa) == 10, sa)
+    check("%d zones: none is empty" % n, all(x >= 1 for x in sa), sa)
+    pa = [round(za.group_position(i, n), 6) for i in range(n)]
+    pb = [round(zb.group_position(i, n), 6) for i in range(n)]
+    check("%d zones: both lamps compute the same colours" % n, pa == pb,
+          "%s vs %s" % (pa, pb))
+    check("%d zones: all in range" % n, all(0.0 <= x <= 1.0 for x in pa), pa)
+
+check("zone 0 is the agreed position, so a slider still means something",
+      za.group_position(0, 4) == za.position())
+
+# A touch must reshuffle the layout, or the strip would only ever slide
+# as one block — the original picked a fresh partition on every impulse.
+before_sizes = za.group_sizes(10, 3)
+before_pos = [za.group_position(i, 3) for i in range(3)]
+layouts = set()
+for _ in range(12):
+    za.touch()
+    layouts.add(tuple(za.group_sizes(10, 3)))
+check("a touch reshuffles the zones", len(layouts) > 3, layouts)
+
+# More zones than LEDs must not produce empty or negative ones.
+tiny = SharedColour(1)
+tiny.touch()
+sizes = tiny.group_sizes(4, 9)
+check("more zones than LEDs is clamped, not broken",
+      sum(sizes) == 4 and all(x >= 1 for x in sizes), sizes)
+
+# Zones must be stable while nothing changes, or the strip would crawl.
+still = SharedColour(1)
+still.touch()
+check("zones are stable between touches",
+      still.group_sizes(10, 3) == still.group_sizes(10, 3))
+
+
 # ── Persistence ──────────────────────────────────────────────
 # A reboot must not discard a friend's contribution — that would visibly
 # undo their colour, which is the one failure a friendship light cannot

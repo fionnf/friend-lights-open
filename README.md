@@ -95,6 +95,17 @@ And it arrives *slowly*, over a minute or two. That began as an aesthetic
 choice and turned out to be exactly what ten downlinks a day requires.
 Colour that arrives like post rather than like a text.
 
+### Zones
+
+The strip splits into zones, each its own colour, reshuffled on every
+touch — as in the original project. Set `NUM_LEDS` and `NUM_GROUPS` in
+`.env`; `NUM_GROUPS = 1` gives one flat colour.
+
+They cost **nothing on the wire.** Rather than transmitting a colour per
+zone on a link that allows ten messages a day, both lamps run the same
+small hash over the same agreed counter and arrive at identical stripes.
+Convergence comes free: same counter in, same pattern out.
+
 **→ [docs/PROTOCOL.md](docs/PROTOCOL.md)** for how, and why ten a day
 shaped all of it.
 

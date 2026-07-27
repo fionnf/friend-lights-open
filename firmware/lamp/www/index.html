@@ -130,6 +130,7 @@
 
 <div class="card">
   <div class="stat"><span>Touches shared</span><b id="touches">–</b></div>
+  <div class="stat"><span>Zones</span><b id="zones">–</b></div>
   <div class="stat"><span>This lamp</span><b id="lampid">–</b></div>
   <p class="hint">
     Changes here are instant and free — they don't use the lamp's ten
@@ -171,15 +172,24 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const NUM_LEDS = 10;
+let NUM_LEDS = 10;
 let dragging = null, pending = 0, lastHue = 0, lastWarm = 1;
+let lastState = { on: true, groups: [0], sizes: [10] };
 
-for (let i = 0; i < NUM_LEDS; i++) {
-  const d = document.createElement("div");
-  d.className = "led";
-  $("stage").appendChild(d);
+// The strip length comes from the lamp, so the page matches whatever
+// you actually soldered rather than assuming ten.
+function buildStrip(n) {
+  if (n === NUM_LEDS && $("stage").children.length) return;
+  NUM_LEDS = n;
+  $("stage").innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement("div");
+    d.className = "led";
+    if (n > 16) { d.style.width = d.style.height = "1rem"; }
+    $("stage").appendChild(d);
+  }
 }
-const LEDS = [...document.querySelectorAll(".led")];
+buildStrip(NUM_LEDS);
 
 function toast(msg) {
   const t = $("toast");
@@ -219,21 +229,32 @@ async function api(path, body) {
 
 function paint(s) {
   const on = s.on;
-  LEDS.forEach((el, i) => {
-    // A gentle per-LED offset, so it reads as a lamp rather than a bar.
+  const leds = [...document.querySelectorAll(".led")];
+  // One colour per zone, spread across the sizes the lamp reports. The
+  // page never recomputes the zones itself — the lamp is the authority,
+  // and two implementations of the same hash is one too many.
+  const groups = s.groups && s.groups.length ? s.groups : [s.hue];
+  const sizes = s.sizes && s.sizes.length ? s.sizes : [leds.length];
+  let gi = 0, left = sizes[0];
+  leds.forEach((el, i) => {
+    while (left <= 0 && gi < sizes.length - 1) { gi++; left = sizes[gi]; }
+    left--;
+    const pos = groups[Math.min(gi, groups.length - 1)];
     const b = on ? s.brightness * (0.88 + 0.12 * Math.sin(i * 0.9)) : 0;
-    const col = on ? css(s.hue, s.warmth, b) : "#24262e";
-    el.style.backgroundColor = col;
-    el.style.boxShadow = on ? `0 0 14px ${css(s.hue, s.warmth, b * 0.7)}` : "none";
+    el.style.backgroundColor = on ? css(pos, s.warmth, b) : "#24262e";
+    el.style.boxShadow = on ? `0 0 14px ${css(pos, s.warmth, b * 0.7)}` : "none";
   });
   $("off-note").textContent = on ? "" : "off";
 }
 
 function render(s) {
   lastHue = s.hue; lastWarm = s.warmth;
+  if (s.leds) buildStrip(s.leds);
+  lastState = s;
   $("title").textContent = s.name || "Lamp";
   $("lampid").textContent = "#" + s.lamp_id;
   $("touches").textContent = s.touches;
+  $("zones").textContent = (s.sizes || []).join(" · ") || "1";
   $("power").textContent = s.on ? "Turn off" : "Turn on";
   paint(s);
   if (dragging !== "hue")  $("hue").value  = Math.round(s.hue * 999);
@@ -267,7 +288,9 @@ $("power").onclick = () =>
 // difference between where the slider is and where the lamp is, and the
 // lamp adds that. A slider that stays convergent.
 function preview() {
-  paint({ on: true, hue: $("hue").value / 999,
+  // While dragging, show the whole strip at the chosen colour: the zone
+  // offsets only settle once the lamp has the new counter.
+  paint({ on: true, hue: $("hue").value / 999, groups: null, sizes: null,
           warmth: $("warm").value / 100, brightness: $("br").value / 100 });
   $("huev").textContent  = Math.round($("hue").value / 999 * 100) + "%";
   $("warmv").textContent = $("warm").value + "%";

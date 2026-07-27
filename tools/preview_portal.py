@@ -78,6 +78,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--leds", type=int, default=10)
+    ap.add_argument("--groups", type=int, default=3,
+                    help="colour zones on the strip; 1 for a flat colour")
     ap.add_argument("--lamps", type=int, default=1, choices=(1, 2),
                     help="2 simulates a friend touching theirs")
     ap.add_argument("--friend-every", type=float, default=20,
@@ -88,7 +90,9 @@ def main():
 
     shared = SharedColour(1)
     engine = Engine(shared, args.leds, brightness=0.6,
-                    arrival_fade_ms=int(args.arrival_fade * 1000))
+                    arrival_fade_ms=int(args.arrival_fade * 1000),
+                    num_groups=args.groups,
+                    group_max_leds=max(1, args.leds // 2))
     strip = FakeStrip(args.leds)
 
     saved = {}

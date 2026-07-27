@@ -64,11 +64,23 @@ MQTT_PASSWORD = ""
 MQTT_PREFIX   = "friendlights_changeme"   # ← make this unguessable
 
 # ── LED strip ───────────────────────────────────────────────
-LED_PIN        = 2
-NUM_LEDS       = 10
+LED_PIN        = 2             # data line, through the 330 ohm resistor
+NUM_LEDS       = 10            # how many LEDs on your strip
 LED_BRIGHTNESS = 0.6
-LED_ORDER      = "GRBW"       # SK6812 RGBW. Use "GRB" for WS2812 (no W)
-REVERSE_LEDS   = False
+LED_ORDER      = "GRBW"        # SK6812 RGBW. "GRB" for WS2812 (no white)
+REVERSE_LEDS   = False         # True if wired from the far end
+
+# ── Colour zones ────────────────────────────────────────────
+# The strip is split into zones, each its own colour, reshuffled on every
+# touch — as in the original project. Both lamps derive identical zones
+# from the shared counter, so this costs nothing on the wire.
+#
+# NUM_GROUPS = 1 gives one colour across the whole strip.
+NUM_GROUPS     = 3
+GROUP_MIN_LEDS = 1             # smallest a zone may be
+GROUP_MAX_LEDS = 8             # largest a zone may be
+GROUP_SPREAD   = 0.35          # how far zones stray from the main colour
+                               # 0.0 = all identical, 1.0 = wildly apart
 
 # ── Touch ───────────────────────────────────────────────────
 # On ESP32-S3 these are native capacitive touch channels — no external

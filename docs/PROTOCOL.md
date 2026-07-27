@@ -171,6 +171,29 @@ designed for devices.
 
 ---
 
+## Zones without paying for them
+
+The original project splits the strip into zones, each its own colour,
+with sizes reshuffled on every touch. Sending that would cost a few bytes
+per zone on a link that allows ten messages a day.
+
+So zones are **derived, not transmitted**. Both lamps run the same
+integer hash over the same agreed counter:
+
+```
+zone 0        = the agreed position exactly
+zone i        = position + (hash(counter, i) - 0.5) x spread
+zone sizes    = partitioned by hash(counter, 100 + i)
+```
+
+Same counter in, same stripes out — on both lamps, with no extra byte.
+The hash uses integer ops masked to 32 bits so MicroPython and CPython
+agree exactly; anything drawing on `urandom` or the clock would give the
+two lamps different strips.
+
+Zone 0 is the agreed position unmodified, so a slider on the control page
+still means what it says.
+
 ## Slow light
 
 When a lamp learns a new total, it does not jump. It fades over minutes.
