@@ -52,18 +52,30 @@ mp() { mpremote connect "$PORT" "$@"; }
 mp exec "from machine import WDT
 WDT(timeout=600000)" 2>/dev/null || true
 
-mp mkdir :lamp     2>/dev/null || true
-mp mkdir :lamp/net 2>/dev/null || true
-mp mkdir :lamp/www 2>/dev/null || true
+# What to copy comes from install.py, which derives it by WALKING
+# firmware/ — one source of truth for both tools. This used to be a
+# hand-written list of globs here, and it silently missed
+# lamp/net/mp_lora/ the day that directory was added: the lamp booted,
+# fell back to the other driver, and said nothing about why.
+PLAN=$(python3 -c "
+import sys; sys.path.insert(0, '$ROOT/tools')
+from install import device_files, remote_dirs
+files = device_files('$ROOT')
+for d in remote_dirs(files):
+    print('D\t' + d)
+for local, remote in files:
+    print('F\t%s\t%s' % (local, remote))
+") || { echo "could not work out what to copy" >&2; exit 1; }
 
-mp cp "$ROOT/firmware/main.py"   :
 # Always lands on the board as config.py, whichever file it came from.
 mp cp "$CONFIG" :config.py
-for f in "$ROOT"/firmware/lamp/*.py;     do mp cp "$f" :lamp/;     done
-for f in "$ROOT"/firmware/lamp/net/*.py; do mp cp "$f" :lamp/net/; done
-mp cp "$ROOT/firmware/lamp/www/index.html" :lamp/www/
-# Handy to have on the board when a radio will not talk.
-mp cp "$ROOT/tools/radio_check.py" : 2>/dev/null || true
+
+while IFS=$'\t' read -r kind a b; do
+  case "$kind" in
+    D) mp mkdir "$a" 2>/dev/null || true ;;
+    F) mp cp "$a" "$b" || { echo "FAILED copying $a" >&2; exit 1; } ;;
+  esac
+done <<< "$PLAN"
 
 echo
 echo "done. watch it boot with:"

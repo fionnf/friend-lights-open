@@ -86,6 +86,39 @@ check("directories are created parents-first",
       remote_dirs(files).index(":lamp") <
       remote_dirs(files).index(":lamp/net"))
 
+# The list is derived by walking firmware/, and this asserts the walk
+# actually caught everything. A file the firmware imports but nobody
+# copies gives a board that boot-loops on ImportError — and on a
+# LoRa-only lamp there is no over-the-air fix, so it means USB or the
+# post. This exact bug shipped once: lamp/net/mp_lora/ was added and
+# deploy.sh's hand-written globs did not know about it.
+on_board = set(r.lstrip(":") for _l, r in files)
+expected = set()
+for dirpath, _dirs, names in os.walk(os.path.join(ROOT, "firmware", "lamp")):
+    if "__pycache__" in dirpath:
+        continue
+    for name in names:
+        if name.endswith(".py") or name.endswith(".html"):
+            rel = os.path.relpath(os.path.join(dirpath, name),
+                                  os.path.join(ROOT, "firmware"))
+            expected.add(rel.replace(os.sep, "/"))
+missing = sorted(expected - on_board)
+check("every file under firmware/lamp/ is copied to the board",
+      not missing, missing)
+check("including the vendored upstream driver package",
+      any(r.startswith(":lamp/net/mp_lora/") for _l, r in files), on_board)
+check("and its directory is created before its files",
+      ":lamp/net/mp_lora" in remote_dirs(files), remote_dirs(files))
+
+# deploy.sh asks install.py for this same list rather than keeping its
+# own. If that ever gets forked back into two lists, they will drift.
+with open(os.path.join(ROOT, "tools", "deploy.sh")) as f:
+    deploy = f.read()
+check("deploy.sh derives its file list from install.py",
+      "device_files" in deploy and "remote_dirs" in deploy)
+check("and no longer hand-globs firmware/lamp",
+      "firmware/lamp/*.py" not in deploy, "stale glob still present")
+
 
 # ── The interactive .env ─────────────────────────────────────
 print("\nanswers to .env")
