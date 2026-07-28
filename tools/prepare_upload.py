@@ -198,11 +198,15 @@ def main():
         print()
 
     if problems:
-        print("  Config missing, so the staged folders are incomplete.")
-        print("  Fix that first:\n")
-        print("      python3 tools/apply_env.py\n")
-        print("  then run me again.\n")
-        return 1
+        print("  The folders are complete and will boot as they are —")
+        print("  strip, touch pad and control page all work. What is")
+        print("  missing is only the three TTN values, so the lamp has")
+        print("  nothing to talk to yet. Two ways to add them:\n")
+        print("    * upload now, then edit config.py on the board in")
+        print("      Thonny: double-click it, paste, Ctrl-S, press R")
+        print("    * or put your keys in .env once and run")
+        print("      python3 tools/apply_env.py && python3 %s\n"
+              % os.path.relpath(__file__, ROOT))
 
     print("  Now, in Thonny:")
     print("    1. View -> Files")

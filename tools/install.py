@@ -2,7 +2,9 @@
 """
 One command from a bare board to a lit lamp.
 
-    python3 tools/install.py
+    python3 tools/install.py            everything, start to finish
+    python3 tools/install.py --deploy --lamp 1 [--port /dev/ttyACM0]
+                                        just reload the code
 
 Rerun it any time — it looks at what exists and does the next thing:
 installs the flashing tools, finds the board, fetches and flashes
@@ -392,7 +394,53 @@ def offer_radio_check(port, ask):
     mpremote(port, "reset", capture_output=True)
 
 
-def main():
+def deploy_only(lamp, port=None):
+    """Update the code on a board that is already set up.
+
+    The whole of `deploy.sh`, which used to be a second copy of this
+    procedure in bash — and every tooling defect the audit found lived
+    only in that copy.
+    """
+    if not ensure_tools():
+        return 1
+    port = port or find_port(input)
+    if not port:
+        return 1
+    config = os.path.join(ROOT, "firmware", "config.lamp%d.py" % lamp)
+    if not os.path.exists(config):
+        say("\n  No config for lamp %d.\n" % lamp)
+        say("      python3 tools/apply_env.py\n")
+        return 1
+    if not run_tests():
+        return 1
+    return 0 if deploy(port, lamp) else 1
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+
+    if "--help" in argv or "-h" in argv:
+        say(__doc__)
+        return 0
+
+    if "--deploy" in argv:
+        lamp, port = 1, None
+        for flag, cast in (("--lamp", int), ("--port", str)):
+            if flag in argv:
+                try:
+                    value = cast(argv[argv.index(flag) + 1])
+                except (IndexError, ValueError):
+                    say("  %s needs a value" % flag)
+                    return 1
+                if flag == "--lamp":
+                    lamp = value
+                else:
+                    port = value
+        if lamp not in (1, 2):
+            say("  --lamp must be 1 or 2")
+            return 1
+        return deploy_only(lamp, port)
+
     say("Friend Lights — install")
     say("Rerunnable: it does whatever it finds not yet done.")
 

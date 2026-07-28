@@ -10,10 +10,14 @@ the second.
 > python3 tools/install.py
 > ```
 >
-> You still do step 1 (hands), step 3 (the TTN console) and step 4
-> (Cloudflare) yourself; the wizard asks for the values step 3 gives
-> you. The pages below remain the reference for what it is doing, and
-> for doing it by hand.
+> Or do those steps by clicking, in **[Thonny](https://thonny.org)**:
+> run `python3 tools/prepare_upload.py`, then upload the folder it
+> builds. **[docs/FLASHING.md](FLASHING.md)** walks through both.
+>
+> Either way you still do step 1 (hands), step 3 (the TTN console) and
+> step 4 (Cloudflare) yourself; the wizard asks for the values step 3
+> gives you. The pages below remain the reference for what is
+> happening, and for doing it by hand.
 
 If you have never used The Things Network, don't skip the box in step 3 —
 five minutes there makes every later screen make sense.
@@ -138,16 +142,16 @@ mpremote connect /dev/ttyACM0 exec "import sys; print(sys.implementation)"
 in it, and the LoRaWAN stack runs on the XIAO alongside everything else.
 (A Wio-E5 needs none either: it arrives with AT firmware already on it.)
 
-Once MicroPython is on, you can check the radio at any time:
+Once the **firmware** is on (step 5), you can check the radio at any
+time — it needs the lamp's own modules, so it will not run before then:
 
 ```bash
 mpremote connect /dev/ttyACM0 run tools/radio_check.py
 ```
 
 It probes both ways the module can be attached, reports which answered,
-and stops at the first thing that is actually wrong. Worth running now
-rather than after four more steps have been built on top of it — but
-attach the antenna first, because it transmits.
+and stops at the first thing that is actually wrong. Attach the antenna
+first, because it transmits.
 
 ---
 

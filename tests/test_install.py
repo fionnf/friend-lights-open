@@ -110,14 +110,27 @@ check("including the vendored upstream driver package",
 check("and its directory is created before its files",
       ":lamp/net/mp_lora" in remote_dirs(files), remote_dirs(files))
 
-# deploy.sh asks install.py for this same list rather than keeping its
-# own. If that ever gets forked back into two lists, they will drift.
+# deploy.sh is a wrapper now, not a second implementation. It drifted
+# from the Python one in four separate ways while it was both.
 with open(os.path.join(ROOT, "tools", "deploy.sh")) as f:
     deploy = f.read()
-check("deploy.sh derives its file list from install.py",
-      "device_files" in deploy and "remote_dirs" in deploy)
-check("and no longer hand-globs firmware/lamp",
-      "firmware/lamp/*.py" not in deploy, "stale glob still present")
+check("deploy.sh delegates to install.py",
+      "install.py" in deploy and "--deploy" in deploy)
+code = "\n".join(l for l in deploy.splitlines()
+                 if l.strip() and not l.strip().startswith("#"))
+check("and reimplements none of it",
+      not any(w in code for w in ("mpremote", "WDT", "mkdir", "device_files")),
+      code)
+check("and stays small enough to read at a glance",
+      len(deploy.splitlines()) < 30, len(deploy.splitlines()))
+
+import install
+check("install.py --help works without a board",
+      install.main(["--help"]) == 0)
+check("--lamp 3 is refused rather than attempted",
+      install.main(["--deploy", "--lamp", "3"]) == 1)
+check("--lamp with no value is refused",
+      install.main(["--deploy", "--lamp"]) == 1)
 
 
 # ── The interactive .env ─────────────────────────────────────

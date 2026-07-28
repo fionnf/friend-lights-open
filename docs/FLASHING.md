@@ -103,9 +103,18 @@ This creates `upload/lamp1/` and `upload/lamp2/` — each one is exactly
 what that lamp's filesystem should contain, with the right config file
 already renamed to `config.py`.
 
-> It will tell you to run `python3 tools/apply_env.py` first if you
-> have not set up your TTN keys yet — that is
-> [SETUP.md step 5](SETUP.md#5-configure-and-load).
+**No TTN keys yet?** It still works. You get a `config.py` with the
+three TTN values blank and everything else filled in, and it says so.
+The lamp boots on that as it stands — strip, touch pad and control page
+all work — and simply has nothing to talk to until you fill them in.
+You can do that in Thonny afterwards: double-click `config.py` in the
+device pane, paste the three values, **Ctrl-S**, press **R**.
+
+If you would rather not edit by hand, put the keys in `.env` once and
+run `python3 tools/apply_env.py` before this step ([SETUP.md step
+5](SETUP.md#5-configure-and-load)). It writes both lamps' configs and
+checks the pair for the mistakes that stay invisible until they are
+expensive.
 
 **The two folders are not interchangeable.** `upload/lamp1/` goes on
 lamp 1 and `upload/lamp2/` on lamp 2. Putting the same one on both
@@ -136,6 +145,8 @@ config.py
 main.py
 radio_check.py
 ```
+
+Nothing else needs to be there, and anything else that is does no harm.
 
 ### 7. First light
 
@@ -200,12 +211,15 @@ update are all the same command. Full detail:
 To update the code on a board that is already set up:
 
 ```bash
-./tools/deploy.sh --lamp 1 /dev/ttyACM0
+python3 tools/install.py --deploy --lamp 1
+./tools/deploy.sh --lamp 1            # the same thing, shorter to type
 ```
 
 That runs every test first and refuses to copy anything if one fails,
 which matters here: a LoRa-only lamp has no over-the-air recovery, so a
-boot loop means USB, or the post.
+boot loop means USB, or the post. It also stretches the watchdog before
+copying and resets the board after — see
+[re-flashing](#re-flashing-a-lamp-that-already-works) for why.
 
 <details>
 <summary>Doing it manually with esptool and mpremote</summary>

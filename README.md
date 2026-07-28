@@ -53,21 +53,35 @@ It installs the flashing tools, finds the board, fetches and flashes
 MicroPython, asks for your TTN values (or reads `.env` if it exists),
 runs every test, loads the firmware, and offers a radio check. **Rerun
 it any time** — it looks at what exists and does the next thing, so a
-half-finished install or a firmware update is the same command.
+half-finished install, a second board and a firmware update are all the
+same command.
 
-What it cannot do for you, because they happen in a browser: clicking
-the radio module onto the XIAO and soldering the strip, registering the
-two devices with TTN, and pasting the bridge into Cloudflare.
+**Prefer clicking to typing?** [Thonny](https://thonny.org) is a small
+free editor that installs MicroPython and copies files with a
+right-click, and it shows you the board's filesystem while it does it:
+
+```bash
+python3 tools/prepare_upload.py      # builds upload/lamp1 and upload/lamp2
+```
+
+Then in Thonny: open `upload/lamp1`, select all, **Upload to /**. That
+folder *is* the board's filesystem — nothing to rename, nothing to pick.
+Step-by-step, with screenshots' worth of detail:
+**[docs/FLASHING.md](docs/FLASHING.md)**.
+
+What neither can do for you: clicking the radio onto the XIAO and
+soldering the strip, registering the two devices with TTN, and pasting
+the bridge into Cloudflare.
 
 **→ [docs/SETUP.md](docs/SETUP.md)** walks all of it, about an hour:
 
 | | | Covered by `install.py` |
 |---|---|---|
 | 1 | Build the lamp | no — it clicks and solders nothing |
-| 2 | Flash MicroPython | **yes** |
+| 2 | Flash MicroPython | **yes** — or Thonny |
 | 3 | Set up The Things Network | no — free account, a glossary comes first |
 | 4 | Deploy the bridge | no — one file, pasted into Cloudflare |
-| 5 | Configure and load | **yes** |
+| 5 | Configure and load | **yes** — or Thonny |
 | 6 | First light | **yes** — it ends with a radio check |
 
 **Check coverage before you order anything.** Look up both addresses on
@@ -249,8 +263,9 @@ docs/
 | Tool | |
 |---|---|
 | `tools/install.py` | **the whole install, one command, rerunnable** |
+| `tools/prepare_upload.py` | stage the folders Thonny uploads |
 | `tools/apply_env.py` | write both lamp configs from `.env` |
-| `tools/deploy.sh --lamp N` | test, then load a lamp |
+| `tools/deploy.sh --lamp N` | test, then reload a lamp (wraps `install.py --deploy`) |
 | `tools/preview_portal.py` | the lamp's page, on your laptop |
 | `tools/simulate.py` | two lamps over a week, in your terminal |
 | `tools/test_bridge.py` | prove the Cloudflare bridge works |
