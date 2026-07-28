@@ -103,7 +103,7 @@ budgets:
 | | Latency | Inbound messages/day | Send policy |
 |---|---|---|---|
 | WiFi / MQTT | ~100 ms | unlimited | send on every change |
-| LoRaWAN / TTN | 2–10 s | **10** | throttled to ~15 min |
+| LoRaWAN / TTN | 2–10 s | **10** | token bucket, ~10/day |
 
 ### What actually limits how often a lamp speaks
 
@@ -127,7 +127,7 @@ So the send budget is ten a day:
 | Change-driven | 3 h **average** — a token bucket | up to 8 |
 | | | **10** |
 
-The change budget is a token bucket (`LORA_BURST`, default 4), not a
+The change budget is a token bucket (`LORA_BURST`, default 6), not a
 fixed gap: the first few touches of a day transmit immediately, and the
 bucket refills one send every three hours. Latency and budget stopped
 being the same knob — a quiet day's touches arrive in seconds while the

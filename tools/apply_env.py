@@ -97,7 +97,7 @@ LORA_BAUD    = 9600
 # LORA_BURST touches go out immediately, refilling one per interval —
 # so touches arrive in seconds until a day gets unusually busy.
 LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
-LORA_BURST           = 4
+LORA_BURST           = 6
 
 # ── Home WiFi (optional) ────────────────────────────────────
 # Can also be entered from the lamp's own page later, with no cable.
@@ -131,9 +131,10 @@ TOUCH_PINS      = [4]                # [] for a lamp with no pad
 TOUCH_THRESHOLD = 20000
 
 # ── Feel ────────────────────────────────────────────────────
-# How long a colour takes to arrive after your friend touches theirs.
-# `python3 tools/simulate.py --arrival-fade 5` to feel the difference.
-ARRIVAL_FADE_MS = 90 * 1000
+# How long the colour settles once your friend's touch arrives. A few
+# seconds feels immediate; 90000 feels like post arriving.
+# `python3 tools/simulate.py --arrival-fade 90` to feel the slow one.
+ARRIVAL_FADE_MS = 6 * 1000
 BREATHE_SPEED   = 0.0008
 BREATHE_DEPTH   = 0.04
 

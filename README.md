@@ -1,7 +1,7 @@
 # Friend Lights Open
 
 Two lamps in two homes, sharing one colour. Touch yours, and your
-friend's drifts toward it over the next hour.
+friend's drifts toward it moments later.
 
 Built for the awkward case: **neither home has WiFi.** The lamps reach
 each other over [The Things Network](https://www.thethingsnetwork.org) — a
@@ -109,9 +109,10 @@ So the colour is not a mirror of your friend's lamp. It is a **joint
 artifact** neither of you fully controls, and you can see their influence
 in it. Both of you push; the light is where you ended up.
 
-And it arrives *slowly*, over a minute or two. That began as an aesthetic
-choice and turned out to be exactly what ten downlinks a day requires.
-Colour that arrives like post rather than like a text.
+And it arrives fast: on a normal day a touch reaches the other lamp in
+**seconds** — the radio path takes 5–10 s and the colour settles over a
+few more (`ARRIVAL_FADE_MS`). If you'd rather the light read as post
+than as a text, set the fade to 90 s and it drifts in like weather.
 
 ### Zones
 

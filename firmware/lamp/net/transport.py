@@ -46,7 +46,7 @@ class Transport:
     min_interval_ms = 0
     # How many sends may happen back-to-back before the average gap
     # kicks in. See the throttling section below.
-    burst = 4
+    burst = 6
 
     # Backoff bounds for automatic reconnection.
     RETRY_MIN_MS = 60_000

@@ -29,7 +29,7 @@ PULSE_DEPTH = 0.35
 class Engine:
 
     def __init__(self, shared, num_leds, brightness=0.6,
-                 arrival_fade_ms=90_000,
+                 arrival_fade_ms=6_000,
                  breathe_speed=0.0008, breathe_depth=0.04,
                  num_groups=3, group_min_leds=1, group_max_leds=8,
                  group_spread=0.35):

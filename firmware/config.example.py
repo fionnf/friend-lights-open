@@ -90,7 +90,7 @@ LORA_BAUD    = 9600
 # seconds, and only a run of more than LORA_BURST touches starts
 # waiting. Steady-state total: ~8 changes + 2 heartbeats = 10 a day.
 LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
-LORA_BURST           = 4
+LORA_BURST           = 6
 
 # ── WiFi (optional) ─────────────────────────────────────────
 # Entirely optional. A lamp with no WiFi works perfectly over LoRa alone;
@@ -133,10 +133,11 @@ TOUCH_PINS      = [4]
 TOUCH_THRESHOLD = 20000
 
 # ── Feel ────────────────────────────────────────────────────
-# How long a colour takes to arrive after a friend touches theirs.
-# Deliberately slow: the light is meant to read as post, not as a text.
-# Set to a few seconds if you want a mirror instead.
-ARRIVAL_FADE_MS = 90 * 1000
+# How long the colour takes to settle once a friend's touch arrives.
+# A few seconds reads as almost-instant; 90 seconds reads as post
+# arriving rather than a text. Taste, not protocol — the radio path
+# itself takes ~5-10 s either way.
+ARRIVAL_FADE_MS = 6 * 1000
 
 BREATHE_SPEED = 0.0008
 BREATHE_DEPTH = 0.04

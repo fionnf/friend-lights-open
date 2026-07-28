@@ -262,7 +262,7 @@ def build_transports(tick=None):
                     tx_power=_cfg("LORA_TX_POWER", 14),
                     min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
                                          3 * 60 * 60 * 1000),
-                    burst=_cfg("LORA_BURST", 4))
+                    burst=_cfg("LORA_BURST", 6))
             else:
                 from machine import UART, Pin
                 from net.lorawan_e5 import LoRaWANE5
@@ -279,7 +279,7 @@ def build_transports(tick=None):
                     port=_cfg("LORA_PORT", 8),
                     min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
                                          3 * 60 * 60 * 1000),
-                    burst=_cfg("LORA_BURST", 4))
+                    burst=_cfg("LORA_BURST", 6))
             lora.start(tick=tick)
             router.add(lora)
         except Exception as e:
@@ -396,7 +396,7 @@ def main():
 
     engine = Engine(shared, _cfg("NUM_LEDS", 10),
                     brightness=brightness,
-                    arrival_fade_ms=_cfg("ARRIVAL_FADE_MS", 90_000),
+                    arrival_fade_ms=_cfg("ARRIVAL_FADE_MS", 6_000),
                     breathe_speed=_cfg("BREATHE_SPEED", 0.0008),
                     breathe_depth=_cfg("BREATHE_DEPTH", 0.04),
                     num_groups=_cfg("NUM_GROUPS", 3),
