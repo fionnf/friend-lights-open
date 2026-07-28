@@ -27,7 +27,7 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-def run():
+def run(label="", config_extra=""):
     work = tempfile.mkdtemp(prefix="flo-")
     shutil.copytree(os.path.join(ROOT, "firmware", "lamp"),
                     os.path.join(work, "lamp"))
@@ -38,6 +38,10 @@ def run():
         src = os.path.join(HERE, "stubs", item)
         dst = os.path.join(work, item)
         (shutil.copytree if os.path.isdir(src) else shutil.copy)(src, dst)
+    if config_extra:
+        # Later assignments win on import, so appending overrides.
+        with open(os.path.join(work, "config.py"), "a") as f:
+            f.write("\n" + config_extra + "\n")
 
     # The firmware does sys.path.append("/lamp"); on a real board that is
     # where the package lives. Mirror it here.
@@ -56,6 +60,14 @@ def run():
     if not hasattr(sys, "print_exception"):
         sys.print_exception = lambda e, *a: _tb.print_exception(
             type(e), e, e.__traceback__)
+
+    # Tag every check with which radio this boot was, so a failure names
+    # the configuration and not just the symptom.
+    tag = (" [%s]" % label) if label else ""
+    _check = globals()["check"]     # rebinding `check` makes it local here
+
+    def check(name, cond, detail=""):           # noqa: shadows on purpose
+        _check(name + tag, cond, detail)
 
     import machine, utime
     import main as fw
@@ -286,7 +298,17 @@ def run_router_checks():
 
 
 if __name__ == "__main__":
-    run()
+    # Boot the firmware once per radio configuration. The SX1262 boot is
+    # the one real hardware takes: ABP keys present, both pinouts
+    # probed, nothing answering — and the lamp must still come up,
+    # render, and keep retrying, because a loose board-to-board
+    # connector must never mean a dark lamp.
+    run(label="E5")
+    run(label="SX1262", config_extra=(
+        'LORA_RADIO = "SX1262"\n'
+        'LORA_DEV_ADDR = "260B1111"\n'
+        'LORA_NWK_SKEY = "0123456789ABCDEF0123456789ABCDEF"\n'
+        'LORA_APP_SKEY = "89ABCDEF0123456789ABCDEF01234567"\n'))
     run_transport_checks()
     run_abp_checks()
     run_finder_checks()
