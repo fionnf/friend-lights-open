@@ -186,6 +186,42 @@ def restore_state(shared):
 
 # ── Transports ───────────────────────────────────────────────
 
+def _find_sx1262():
+    """Locate the Wio-SX1262, whichever way it is attached.
+
+    Called from the transport rather than at boot, so a module that was
+    not seated at power-on is picked up on the next retry.
+
+    Nothing here has to be configured: the two ways of attaching the
+    module are probed in turn. Naming the pins in config.py only becomes
+    necessary for a board that is neither.
+    """
+    from net.sx1262 import open_radio
+
+    named = ("SX_NSS_PIN" in _provision) or hasattr(config, "SX_NSS_PIN")
+    preferred = None
+    if named:
+        preferred = {"sck": _cfg("SX_SCK_PIN", 7),
+                     "mosi": _cfg("SX_MOSI_PIN", 9),
+                     "miso": _cfg("SX_MISO_PIN", 8),
+                     "nss": _cfg("SX_NSS_PIN", 41),
+                     "reset": _cfg("SX_RESET_PIN", 42),
+                     "busy": _cfg("SX_BUSY_PIN", 40),
+                     "dio1": _cfg("SX_DIO1_PIN", 39)}
+
+    # Pins the lamp is already using. Probing means driving them, and
+    # driving the LED data line writes garbage down the strip.
+    in_use = [_cfg("LED_PIN", 2)] + list(_cfg("TOUCH_PINS", []))
+
+    radio, detail = open_radio(spi_id=_cfg("SX_SPI_ID", 1),
+                               preferred=preferred, avoid=in_use)
+    if radio is None:
+        print("[lora] no SX1262 answered — %s" % detail)
+        print("       check the board-to-board connector is seated, then")
+        print("       run tools/radio_check.py for a pin-by-pin report")
+    return radio
+
+
 def build_transports(tick=None):
     router = Router()
 
@@ -197,17 +233,9 @@ def build_transports(tick=None):
         radio_kind = _cfg("LORA_RADIO", "E5").upper()
         try:
             if radio_kind.startswith("SX"):
-                from net.sx1262 import SX1262
-                from net.lorawan_abp import LoRaWANABP
-                radio = SX1262(
-                    spi_id=_cfg("SX_SPI_ID", 1),
-                    sck=_cfg("SX_SCK_PIN", 7), mosi=_cfg("SX_MOSI_PIN", 9),
-                    miso=_cfg("SX_MISO_PIN", 8), nss=_cfg("SX_NSS_PIN", 4),
-                    reset=_cfg("SX_RESET_PIN", 3), busy=_cfg("SX_BUSY_PIN", 2),
-                    dio1=_cfg("SX_DIO1_PIN", 1))
-                from net.lorawan_abp import _hex
+                from net.lorawan_abp import LoRaWANABP, _hex
                 lora = LoRaWANABP(
-                    radio,
+                    _find_sx1262,
                     _hex(_cfg("LORA_DEV_ADDR", ""), 4),
                     _hex(_cfg("LORA_NWK_SKEY", ""), 16),
                     _hex(_cfg("LORA_APP_SKEY", ""), 16),

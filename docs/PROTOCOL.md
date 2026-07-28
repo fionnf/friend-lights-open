@@ -140,7 +140,7 @@ nothing and cost the budget.
 
 The lamp is plugged into a wall, so use **Class C**: the receiver stays
 open continuously and a downlink arrives when it is sent. In Class A a
-downlink waits until the lamp next transmits — up to 15 minutes.
+downlink waits until the lamp next transmits — up to three hours.
 
 ### Where the two networks meet
 

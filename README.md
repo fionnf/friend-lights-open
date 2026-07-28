@@ -13,7 +13,7 @@ hotspot, no monthly bill.
 
 > **Status:** complete and loadable, **not yet tested on real hardware.**
 > Everything is green against stubbed MicroPython, including a test that
-> executes `main()`. Nothing has yet met a real Wio-E5 or a real gateway.
+> executes `main()`. Nothing has yet met a real radio or a real gateway.
 
 ---
 
@@ -45,7 +45,7 @@ not a router. Stay connected anyway.
 
 | | | |
 |---|---|---|
-| 1 | Build the lamp | XIAO ESP32S3 + Wio-E5 + an LED strip |
+| 1 | Build the lamp | XIAO ESP32S3 + Wio-SX1262 + an LED strip |
 | 2 | Flash MicroPython | one USB cable |
 | 3 | Set up The Things Network | free; a glossary comes first |
 | 4 | Deploy the bridge | 40 lines, pasted into Cloudflare |
@@ -70,8 +70,8 @@ python3 tools/apply_env.py # writes both lamp configs
 
 `.env` is gitignored, and so are the configs it generates — there is no
 file you have to remember not to commit. It refuses to write anything
-that would produce a broken pair: a shared DevEUI, mismatched JoinEUIs,
-or a password WPA2 would silently ignore.
+that would produce a broken pair: two lamps sharing a session, a
+half-filled key, or a password WPA2 would silently ignore.
 
 ---
 
@@ -146,15 +146,22 @@ but only **ten downlinks**. Everything follows from that one number.
 | Part | ~Cost | Notes |
 |---|---|---|
 | [Seeed XIAO ESP32S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | €13 | WiFi + BLE + native capacitive touch |
-| [Wio-E5](https://www.seeedstudio.com/Grove-LoRa-E5-STM32WLE5JC-p-4867.html) **or** [Wio-SX1262](https://thepihut.com/products/wio-sx1262-for-xiao) | €14 | either works — one line in `.env` |
+| [Wio-SX1262](https://thepihut.com/products/wio-sx1262-for-xiao) | €14 | clips onto the XIAO — no wiring |
 | SK6812 RGBW strip | €5 | WS2812 works too, minus the white channel |
 | 5 V supply, 330 Ω resistor | — | |
 
-**Both radios are supported.** The Wio-E5 carries a certified LoRaWAN
-stack in its own firmware and is driven by AT strings — lower risk, and
-what I would fit first. The Wio-SX1262 is a bare radio, so the stack
-runs on the ESP32 in Python: ABP rather than OTAA, and Class C, which
-together mean nothing in the path is timing-critical.
+The radio needs no wiring at all: it has a board-to-board connector that
+mates with the XIAO's underside, and the firmware works out for itself
+which pins it landed on. Press them together until they click.
+
+**A second radio is supported.** The
+[Wio-E5](https://www.seeedstudio.com/Grove-LoRa-E5-STM32WLE5JC-p-4867.html)
+carries a certified LoRaWAN stack in its own firmware and is driven by
+AT strings over four wires — lower risk, but a separate module rather
+than something that clips on. `LORA_RADIO = E5` in `.env` and nothing
+else changes. The SX1262 is a bare radio, so the stack runs on the ESP32
+in Python: ABP rather than OTAA, and Class C, which together mean
+nothing in the path is timing-critical.
 
 The crypto for that stack is checked against **RFC 4493 and FIPS-197
 test vectors**, because a wrong message integrity code produces a lamp
@@ -213,7 +220,7 @@ firmware/
     └── net/                # transport.py, lorawan_e5.py, mqtt_wifi.py
 bridge/worker.js            # uplink -> the other lamp's downlink
 .env                        # every secret, in one gitignored file
-tests/                      # five suites, no dependencies
+tests/                      # seven suites, no dependencies
 docs/
 ```
 
@@ -224,6 +231,7 @@ docs/
 | `tools/preview_portal.py` | the lamp's page, on your laptop |
 | `tools/simulate.py` | two lamps over a week, in your terminal |
 | `tools/test_bridge.py` | prove the Cloudflare bridge works |
+| `tools/radio_check.py` | run on the lamp when a radio won't talk |
 | `tools/run_bridge_locally.mjs` | run the bridge offline |
 
 | Doc | |

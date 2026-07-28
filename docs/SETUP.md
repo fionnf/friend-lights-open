@@ -34,26 +34,32 @@ Keep a scratch file:
 
 | From | What |
 |---|---|
-| TTN, lamp 1 | DevEUI, JoinEUI, AppKey |
-| TTN, lamp 2 | DevEUI, JoinEUI, AppKey |
+| TTN, lamp 1 | DevAddr, NwkSKey, AppSKey |
+| TTN, lamp 2 | DevAddr, NwkSKey, AppSKey |
 | Cloudflare | your worker URL |
 | you | a shared secret you invent |
 
 Only the six TTN values go on the lamps.
 
+> Using a **Wio-E5** instead? It collects DevEUI, JoinEUI and AppKey
+> rather than those three — every screen that differs is called out as
+> you reach it.
+
 ---
 
 ## 1. Build the lamp
+
+**The radio needs no wiring.** The Wio-SX1262 has a board-to-board
+connector on its underside that mates with the XIAO's. Line the two up
+and press until they click. Nothing to solder, nothing to get backwards,
+and the firmware works out for itself which pins it landed on.
+
+Then the parts that do need a soldering iron:
 
 ```
 XIAO GPIO2 ──[330Ω]── DIN   SK6812 strip
 XIAO 5V    ──────────  VCC
 XIAO GND   ──────────  GND
-
-XIAO TX (GPIO43) ──►  RX    Wio-E5      ← they cross over
-XIAO RX (GPIO44) ◄──  TX
-XIAO 3V3         ──►  VCC
-XIAO GND         ──►  GND
 
 XIAO GPIO4  ──────────  copper pad / foil    (touch, optional)
 ```
@@ -65,8 +71,18 @@ The touch pad needs **no external resistor** — the ESP32-S3 has hardware
 touch channels. Bare copper, foil, or a screw head all work. Set
 `TOUCH_PINS = []` if you don't want one.
 
-⚠️ **Never power the Wio-E5 without its antenna attached.** Transmitting
-into an open connector can damage the radio.
+> **Wio-E5 instead?** That one is four wires to a UART, and TX/RX cross
+> over:
+>
+> ```
+> XIAO TX (GPIO43) ──►  RX    Wio-E5      ← they cross over
+> XIAO RX (GPIO44) ◄──  TX
+> XIAO 3V3         ──►  VCC
+> XIAO GND         ──►  GND
+> ```
+
+⚠️ **Screw the antenna on before powering anything.** Transmitting into
+an open connector can damage the radio.
 
 More on antennas and placement in [docs/HARDWARE.md](HARDWARE.md) —
 the short version is that putting the lamp near a window is worth about
@@ -106,8 +122,20 @@ mpremote connect /dev/ttyACM0 exec "import sys; print(sys.implementation)"
 > If no serial port appears at all, suspect **the cable** before anything
 > else. Plenty of USB-C cables are charge-only.
 
-The **Wio-E5 needs no flashing** — its LoRaWAN AT firmware is already on
-it, which is the whole reason for choosing it over a bare SX1262.
+**The radio needs no flashing of its own** — the SX1262 has no processor
+in it, and the LoRaWAN stack runs on the XIAO alongside everything else.
+(A Wio-E5 needs none either: it arrives with AT firmware already on it.)
+
+Once MicroPython is on, you can check the radio at any time:
+
+```bash
+mpremote connect /dev/ttyACM0 run tools/radio_check.py
+```
+
+It probes both ways the module can be attached, reports which answered,
+and stops at the first thing that is actually wrong. Worth running now
+rather than after four more steps have been built on top of it — but
+attach the antenna first, because it transmits.
 
 ---
 
@@ -132,10 +160,18 @@ rest will make sense.**
 > **Downlink** — network → lamp. **Only 10 a day.** This is the limit that
 > matters.
 >
-> **OTAA** — how a lamp proves who it is when it joins, using three
-> secrets you'll copy out of the console:
-> **DevEUI** (the lamp's serial number), **JoinEUI** (which server to
-> join — all zeros is fine), and **AppKey** (the actual secret).
+> **ABP** — *activation by personalisation.* The lamp is handed its
+> session up front rather than negotiating one, so there is no join step
+> at all: it can transmit the moment it powers on. Three values, which
+> you'll copy out of the console: **DevAddr** (the lamp's address on the
+> network), **NwkSKey** and **AppSKey** (the two secrets). This is what
+> the SX1262 uses, because catching a join reply means listening in a
+> window that opens 5 s after transmitting and lasts milliseconds —
+> which MicroPython's garbage collector can pause straight through.
+>
+> **OTAA** — the alternative, where the lamp joins by proving who it is:
+> **DevEUI**, **JoinEUI** and **AppKey**. Only for the Wio-E5, whose own
+> firmware handles the timing.
 >
 > **It is free.** No card, no trial. The plan is called *Sandbox*.
 
@@ -179,43 +215,51 @@ Now fill in, in order:
 
 **Regional Parameters version** → `RP001 Regional Parameters 1.0.3 revision A`
 
-> These three must match what the Wio-E5 module expects. They are not
-> preferences — get one wrong and the lamp will transmit but never join.
+> These three are not preferences. `SF9 for RX2` in particular is what
+> the firmware listens on — pick a different plan and the lamp will
+> transmit fine and never hear a thing.
 
 Click **Show advanced activation, LoRaWAN class and cluster settings**:
 
-**Activation mode** → `Over the air activation (OTAA)`
+**Activation mode** → `Activation by personalization (ABP)`
 
 **Additional LoRaWAN class capabilities** → tick **Class C (Continuous)**
 
 > **Don't skip Class C.** Your lamp is plugged into a wall, so it can
 > keep listening all the time. In the default Class A it only listens for
 > a couple of seconds right after it transmits — so a message from your
-> friend would sit in a queue for up to 15 minutes. Same 10-a-day budget
+> friend would sit in a queue for up to three hours. Same 10-a-day budget
 > either way; Class C just means they arrive when they're sent.
+
+Leave **Resets frame counters** switched **off**. The lamp keeps count
+across power cuts by itself, and turning this on would let anyone replay
+an old message at your lamp.
 
 Then:
 
 | Field | What to do |
 |---|---|
-| JoinEUI (AppEUI) | type `0011223344556677` → **Confirm** (see the note below) |
-| DevEUI | click **Generate** |
-| AppKey | click **Generate** |
+| DevEUI | click **Generate** — ABP doesn't use it, but the console asks |
+| Device address (DevAddr) | click **Generate** ← **copy it** |
+| NwkSKey | click **Generate** ← **copy it** |
+| AppSKey | click **Generate** ← **copy it** |
 | End device ID | `lamp-1` ← **write this down** |
 
 Click **Register end device**.
 
-> **Why not sixteen zeros?** The console offers all-zeros and TTN's docs
-> say it is fine. Usually it is. But some LoRaWAN stacks read an all-zero
-> JoinEUI as "not configured yet" and refuse to join, with no error that
-> says so — you just watch a lamp transmit forever and never connect.
-> Inventing a value costs nothing and removes the possibility. Any 16 hex
-> characters will do; it is an identifier, not a secret.
+**📋 Copy those three now** — DevAddr, NwkSKey and AppSKey. They go into
+`.env` in step 5. You can always come back for them: they are on the
+device page under **General settings → Session information**, the two
+keys behind an eye icon.
 
-**📋 Copy these three now** — DevEUI, JoinEUI and AppKey. They go into
-`config.py` in step 5. You can always come back: the device page shows
-DevEUI and JoinEUI, and AppKey is under **General settings → Join
-settings** behind an eye icon.
+> **Using a Wio-E5?** Set **Activation mode** to
+> `Over the air activation (OTAA)` instead, and the fields become
+> JoinEUI, DevEUI and AppKey. Type `0011223344556677` for the JoinEUI
+> and **Generate** the other two. The console offers sixteen zeros and
+> TTN's docs say that is fine — usually it is, but some stacks read an
+> all-zero JoinEUI as "not configured yet" and refuse to join with no
+> error that says so. Inventing a value costs nothing. It is an
+> identifier, not a secret, and it must be identical on both lamps.
 
 ### 3d. Register the second lamp
 
@@ -226,16 +270,19 @@ What differs, and what must not:
 | | |
 |---|---|
 | **End device ID** | `lamp-2` — must differ |
-| **DevEUI** | Generate again — must differ, it identifies the device |
-| **AppKey** | Generate again — must differ, it is that lamp's secret |
-| **JoinEUI** | **the same** `0011223344556677` — it identifies the join server, not the lamp |
+| **DevAddr** | Generate again — must differ, it is the lamp's address |
+| **NwkSKey**, **AppSKey** | Generate again — must differ, they are that lamp's session |
+| everything else | identical: same plan, same versions, same Class C |
+
+Two lamps sharing a session fight over it and neither stays connected.
+`tools/apply_env.py` refuses to write configs where they match, so a
+copy-paste slip is caught before it reaches a board.
 
 ### ✅ Checkpoint
 
 You should now have, under one application, two end devices called
-`lamp-1` and `lamp-2`, both showing **Class C** and **OTAA**, and six
-values written down (a DevEUI and AppKey for each, plus the zeros
-JoinEUI).
+`lamp-1` and `lamp-2`, both showing **Class C** and **ABP**, and six
+values written down — a DevAddr, NwkSKey and AppSKey for each.
 
 Both will say *"Never seen"* — that's expected, they haven't been
 switched on yet.
@@ -370,15 +417,23 @@ Fill in the six values you collected in step 3, plus how long your strip
 is:
 
 ```
-LAMP1_DEV_EUI = 70B3D57ED0......      # from the TTN device page
-LAMP1_APP_KEY = ................      # Join settings, behind the eye
-LAMP2_DEV_EUI = 70B3D57ED0......
-LAMP2_APP_KEY = ................
-JOIN_EUI      = 0011223344556677      # the SAME value on both lamps
+LORA_RADIO     = SX1262               # E5 if that is the module you have
+
+LAMP1_DEV_ADDR = 260B....             # Session information, on the
+LAMP1_NWK_SKEY = ................     #   TTN device page — the two
+LAMP1_APP_SKEY = ................     #   keys are behind an eye icon
+LAMP2_DEV_ADDR = 260B....             # lamp 2's own three, all different
+LAMP2_NWK_SKEY = ................
+LAMP2_APP_SKEY = ................
 
 NUM_LEDS      = 10                    # however many you soldered
 NUM_GROUPS    = 3                     # colour zones; 1 for a flat colour
 ```
+
+> With `LORA_RADIO = E5` it wants `LAMP1_DEV_EUI`, `LAMP1_APP_KEY`, the
+> same two for lamp 2, and one shared `JOIN_EUI` instead. Those lines
+> are already in `.env.example`; leave whichever set you don't need
+> blank.
 
 Then:
 
@@ -398,9 +453,9 @@ anywhere saying why:
 
 | Mistake | What you would see |
 |---|---|
-| Both lamps sharing a **DevEUI** | They fight over one session; neither stays joined |
-| Lamps with **different JoinEUIs** | One never joins at all |
-| Both lamps sharing a **`LAMP_ID`** | Both join fine, then ignore each other forever — the CRDT drops a message bearing your own id as an echo of itself |
+| Both lamps sharing a **DevAddr** or session key | They fight over one session; neither stays connected |
+| Both lamps sharing a **`LAMP_ID`** | Both connect fine, then ignore each other forever — the CRDT drops a message bearing your own id as an echo of itself |
+| *(E5)* lamps with **different JoinEUIs** | One never joins at all |
 
 None of those is visible by reading a config file, and all three are what
 you get by copying one lamp's file and editing it — which is exactly what
@@ -436,12 +491,30 @@ Tap **R** on the board. You want:
 
 ```
 [boot] friend-lights-open 2026-07-27.1 — lamp 1 
-[lorawan] joining...
-[lorawan] joined
+[sx1262] found on the B2B kit pinout — NSS 41, RST 42, BUSY 40, DIO1 39
+[lorawan] radio up, listening on 869.525 MHz SF9, fcnt 0
 ```
 
-The strip breathes warm white while it joins — this can take a minute —
-then settles.
+That first line is the firmware finding the radio for itself. It probes
+both ways the module can be attached, so a line saying `header module`
+instead is fine — it just means yours is on the header.
+
+There is no "joining" step: ABP hands the lamp its session up front, so
+it is ready the moment it powers on. The strip breathes warm white
+through startup, then settles.
+
+If instead you get:
+
+```
+[lora] no SX1262 answered — header module pinout: SPI returned 0000...
+```
+
+neither pinout replied, which means the connector rather than a setting.
+Nothing in `config.py` can cause both to fail. Press the boards together
+until they click, and run `radio_check.py` for a pin-by-pin report.
+
+> **Wio-E5?** You'll see `[lorawan] joining...` then `joined` instead,
+> and it can take a minute.
 
 ### Reach it from your phone
 
@@ -461,14 +534,15 @@ strip is wired correctly, without waiting on the radio at all.
 This is the tool that tells you what's actually happening, so it's worth
 learning now. Open your device in TTN and click **Live data**.
 
-When the lamp joins you'll see a green **Accept join-request**. Then
-touch the pad and within 15 minutes you'll see:
+An ABP lamp says nothing until it transmits — no join to watch. Touch
+the pad, and within three hours you'll see:
 
 | What you see | What it means |
 |---|---|
-| `Accept join-request` | The lamp is on the network. Coverage is fine. |
-| `Forward uplink data message` | Your touch reached TTN. Radio works. |
+| `Forward uplink data message` | Your touch reached TTN. Radio and coverage are fine. |
 | `Schedule downlink for transmission` **on the other lamp** | The bridge fired. Everything works. |
+
+(With a Wio-E5 there's a green `Accept join-request` first.)
 
 **If you see the uplink but no downlink on the other lamp, the bridge is
 the problem** — not your wiring, not your radio. Check the worker (step
@@ -480,7 +554,7 @@ Do the same for lamp 2, and the two are linked.
 
 A brand-new lamp starts at counter zero, so until it hears from its
 friend both lamps will look the same dull warm white. Touch one. Within
-15 minutes the other starts drifting. Nothing is broken in the meantime.
+three hours the other starts drifting. Nothing is broken in the meantime.
 
 ---
 

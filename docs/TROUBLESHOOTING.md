@@ -10,9 +10,12 @@ Where to look is covered in
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `no response — check wiring and baud rate` | TX/RX not crossed | XIAO TX → E5 RX, XIAO RX → E5 TX |
-| `join failed` | No gateway hearing you | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
-| Joins, uplinks visible in TTN, other lamp never changes | **The bridge isn't running** | The single most common failure. Cloudflare → your worker → **Logs** |
+| `[lora] no SX1262 answered` | Neither pinout replied, so it is the connector, not a setting | Press the boards together until they click, then `tools/radio_check.py` |
+| Radio found, uplinks never appear in TTN | No gateway in range — the most likely single cause | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
+| Uplinks stop appearing after a reset in the console | Frame counters out of step | Delete `lorawan_fcnt.json` from the lamp so it starts from zero too |
+| *(E5)* `no response — check wiring and baud rate` | TX/RX not crossed | XIAO TX → E5 RX, XIAO RX → E5 TX |
+| *(E5)* `join failed` | No gateway hearing you | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
+| Uplinks visible in TTN, other lamp never changes | **The bridge isn't running** | The single most common failure. Cloudflare → your worker → **Logs** |
 | Bridge returns 500 "missing downlink headers" | No Downlink API key on the webhook | Create one under **Application → API keys** with *Write downlink application traffic*, then paste it into the webhook |
 | Can't find the API key you made | TTN shows it once, at creation | Delete it and make a new one; there is no way to view it again |
 | Bridge returns 403 | Shared secret mismatch | The `x-shared-secret` header must match the worker secret |
@@ -24,7 +27,7 @@ Where to look is covered in
 | `deLENIghted-…` network doesn't appear | `PORTAL_ENABLED = False`, or toggled off by a 5 s hold | Hold the pad 5 s again; the strip keeps rendering throughout |
 | Network appears but the password is rejected | `PORTAL_PASSWORD` under 8 characters | The ESP32 silently ignores short passwords and comes up **open** — the boot log says which mode it used |
 | Joined, but no page opened | Phone suppressed the captive-portal prompt | Browse to **http://192.168.4.1** |
-| Page loads, buttons do nothing | Lamp busy joining LoRaWAN | Wait for `[lorawan] joined`, then reload |
+| Page loads, buttons do nothing | Lamp busy bringing the radio up | Wait for `[lorawan] radio up`, then reload |
 | Colour changes feel far too slow | Working as intended | See [the README](../README.md#living-with-ten-messages-a-day) |
 
 ---
@@ -57,6 +60,6 @@ Where to look is covered in
 |---|---|---|
 | Network is there, password rejected | `PORTAL_PASSWORD` under 8 characters | The ESP32 silently ignores short ones and comes up **open**; the boot log says which mode it used |
 | Joined, no page appeared | Phone suppressed the captive-portal prompt | Browse to **http://192.168.4.1** |
-| Page loads, buttons do nothing | Lamp still joining LoRaWAN | Wait for `[lorawan] joined`, then reload |
+| Page loads, buttons do nothing | Lamp still bringing the radio up | Wait for `[lorawan] radio up`, then reload |
 | Slider snaps back | The lamp is the authority and disagreed | It is applying a slow fade — give it a moment |
 | Want to check the page without a lamp | | `python3 tools/preview_portal.py --lamps 2` |

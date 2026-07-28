@@ -57,12 +57,7 @@ LAMP_NAME = "{name}"
 
 # ── LoRaWAN (The Things Network) ────────────────────────────
 LORA_ENABLED = True
-LORA_RADIO   = "{radio}"             # E5 (AT + OTAA) or SX1262 (ABP)
-
-# OTAA, used when LORA_RADIO is "E5"
-LORA_DEV_EUI = "{dev_eui}"          # unique to this lamp
-LORA_APP_EUI = "{join_eui}"          # SAME on both lamps
-LORA_APP_KEY = "{app_key}"
+LORA_RADIO   = "{radio}"             # SX1262 (ABP) or E5 (AT + OTAA)
 
 # ABP session, used when LORA_RADIO is "SX1262"
 LORA_DEV_ADDR = "{dev_addr}"
@@ -71,8 +66,14 @@ LORA_APP_SKEY = "{app_skey}"
 LORA_SF       = 9                    # must match RX2 on your plan
 LORA_TX_POWER = 14                   # dBm, EU868 ceiling
 
-# SPI to the Wio-SX1262 — BOARD-TO-BOARD kit pins. The standalone
-# module on the header uses different ones (NSS is GPIO4 there).
+# OTAA, used when LORA_RADIO is "E5"
+LORA_DEV_EUI = "{dev_eui}"          # unique to this lamp
+LORA_APP_EUI = "{join_eui}"          # SAME on both lamps
+LORA_APP_KEY = "{app_key}"
+
+# SPI to the Wio-SX1262 — the board-to-board kit pins, tried first. If
+# the module is on the through-hole header instead, the firmware finds
+# that by itself; you do not have to change anything here.
 SX_SPI_ID    = 1
 SX_SCK_PIN   = 7
 SX_MOSI_PIN  = 9
@@ -162,7 +163,7 @@ def main():
             missing.append(key)
         return v
 
-    radio = (env.get("LORA_RADIO", "").strip() or "E5").upper()
+    radio = (env.get("LORA_RADIO", "").strip() or "SX1262").upper()
     abp = radio.startswith("SX")
 
     lamps = []

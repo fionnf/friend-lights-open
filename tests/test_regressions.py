@@ -360,6 +360,7 @@ if os.path.exists(_env) or any(os.path.exists(c) for c in _cfgs):
     print("  SKIP  .env or a lamp config already exists — not touching them")
 else:
     _GOOD = """
+LORA_RADIO = E5
 LAMP1_DEV_EUI = 70B3D57ED0061111
 LAMP1_APP_KEY = 0123456789ABCDEF0123456789ABCDEF
 LAMP2_DEV_EUI = 70B3D57ED0062222
@@ -416,6 +417,45 @@ PORTAL_PASSWORD = lightupleni
         code, out = _run(_GOOD.replace("LAMP1_APP_KEY = 0123456789ABCDEF0123456789ABCDEF",
                                        "LAMP1_APP_KEY ="))
         check("a missing AppKey is refused", code != 0)
+
+        # ── The same again for ABP, which is now the default ──
+        # A shared session is the ABP version of a shared DevEUI: both
+        # lamps look fine in the console and neither stays connected.
+        _cleanup()
+        _ABP = """
+LORA_RADIO = SX1262
+LAMP1_DEV_ADDR = 260B1111
+LAMP1_NWK_SKEY = 0123456789ABCDEF0123456789ABCDEF
+LAMP1_APP_SKEY = 89ABCDEF0123456789ABCDEF01234567
+LAMP2_DEV_ADDR = 260B2222
+LAMP2_NWK_SKEY = FEDCBA9876543210FEDCBA9876543210
+LAMP2_APP_SKEY = 76543210FEDCBA9876543210FEDCBA98
+PORTAL_PASSWORD = lightupleni
+"""
+        code, out = _run(_ABP)
+        check("an ABP .env writes both configs", code == 0, out.strip()[:160])
+
+        cfg = []
+        for c in _cfgs:
+            ns = {}
+            exec(open(c).read(), ns)
+            cfg.append(ns)
+        check("the radio is set to SX1262",
+              all(ns["LORA_RADIO"] == "SX1262" for ns in cfg))
+        check("DevAddrs differ",
+              cfg[0]["LORA_DEV_ADDR"] != cfg[1]["LORA_DEV_ADDR"])
+        check("session keys differ",
+              cfg[0]["LORA_APP_SKEY"] != cfg[1]["LORA_APP_SKEY"])
+        check("the B2B pins are the first guess",
+              all(ns["SX_NSS_PIN"] == 41 and ns["SX_RESET_PIN"] == 42
+                  and ns["SX_BUSY_PIN"] == 40 and ns["SX_DIO1_PIN"] == 39
+                  for ns in cfg))
+
+        _cleanup()
+        code, out = _run(_ABP.replace("260B2222", "260B1111"))
+        check("a shared DevAddr is refused", code != 0)
+        check("...and nothing was written",
+              not any(os.path.exists(c) for c in _cfgs))
     finally:
         _cleanup()
 

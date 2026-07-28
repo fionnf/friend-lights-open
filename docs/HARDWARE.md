@@ -5,26 +5,40 @@ Roughly **€35 a lamp**, no recurring cost.
 | Part | ~Cost | Notes |
 |---|---|---|
 | Seeed XIAO ESP32S3 | €13 | WiFi + BLE + native capacitive touch |
-| Seeed Grove Wio-E5 | €14 | LoRaWAN stack lives **on the module** |
+| Seeed Wio-SX1262 | €14 | The radio. Clips straight onto the XIAO |
 | SK6812 RGBW strip | €5 | WS2812 also works, without the white channel |
 | 5 V supply | — | USB is fine for a short strip |
 | 330 Ω resistor | — | In series on the LED data line |
 
+The Wio-E5 is supported as an alternative — see
+[Two radios](#two-radios-one-interface) — but it is a separate module on
+a UART rather than something that clips on, so the SX1262 is the default.
+
 ---
 
 ## Wiring
+
+The radio needs none. It has a board-to-board connector that mates with
+the XIAO's underside: press the two together until they click. That is
+the whole job, and there is nothing to get backwards.
+
+Everything else:
 
 ```
 XIAO GPIO2 ──[330Ω]── DIN   SK6812 strip
 XIAO 5V    ──────────  VCC
 XIAO GND   ──────────  GND
 
+XIAO GPIO4  ──────────  copper pad / foil    (touch, optional)
+```
+
+If you have the **Wio-E5** instead, it goes on a UART:
+
+```
 XIAO TX (GPIO43) ──►  RX    Wio-E5
 XIAO RX (GPIO44) ◄──  TX
 XIAO 3V3         ──►  VCC
 XIAO GND         ──►  GND
-
-XIAO GPIO4  ──────────  copper pad / foil    (touch, optional)
 ```
 
 Data flows DIN → DOUT, so connect to the **DIN** end of the strip. If
@@ -64,17 +78,25 @@ directly from a 5 V supply rather than through the XIAO.
 
 ## Two radios, one interface
 
-| | Wio-E5 | Wio-SX1262 |
+| | Wio-SX1262 *(default)* | Wio-E5 |
 |---|---|---|
-| LoRaWAN stack | **on the module** | on the ESP32, in Python |
-| Driven by | AT commands over UART | SPI, register level |
-| Activation | OTAA | **ABP** |
-| Config | `LORA_RADIO = E5` | `LORA_RADIO = SX1262` |
-| Risk | proven firmware | this project's own stack |
+| Attaches by | board-to-board, no wiring | 4 wires to a UART |
+| LoRaWAN stack | on the ESP32, in Python | **on the module** |
+| Driven by | SPI, register level | AT commands |
+| Activation | **ABP** | OTAA |
+| Config | `LORA_RADIO = SX1262` | `LORA_RADIO = E5` |
+| Risk | this project's own stack | certified firmware |
 
-The E5 is still the lower-risk board — its stack is certified and has
-shipped in thousands of products. But the SX1262 works, and the choice
-is one line in `.env`.
+Nothing above the radio can tell which one it has: the CRDT, the codec
+and the engine all sit behind one transport interface. The choice is one
+line in `.env`, and the keys it then asks you for.
+
+The E5 is the lower-risk board — its stack has shipped in thousands of
+products, while the SX1262 path runs a LoRaWAN implementation written
+for this project. It is checked against the published RFC 4493 and
+FIPS-197 vectors, which is the most that can be done without a gateway,
+but it is ours. The SX1262 is the default anyway because it is the
+module that clips onto the XIAO.
 
 ### Why the SX1262 path uses ABP
 
@@ -91,14 +113,23 @@ counters in blocks and persists them **before** transmitting, so a power
 cut skips forward rather than repeating. If you ever reset the counter
 in the TTN console, delete `lorawan_fcnt.json` from the lamp to match.
 
-### Wiring the Wio-SX1262
+### Which pins — you don't have to know
 
-**The kit and the standalone module use different pins.** The XIAO
-ESP32S3 kit joins the boards with a board-to-board connector; the
-standalone module goes on the through-hole header. Picking the wrong set
-gives you SPI that reads back all zeros.
+**There are two ways to attach a Wio-SX1262 and they share no control
+pins.** The XIAO kit mates the boards with a board-to-board connector;
+the standalone module goes on the through-hole header. Choosing wrong
+gives you SPI that reads back all zeros, which looks exactly like a dead
+board.
 
-| | B2B kit *(default)* | Header module |
+So the firmware doesn't ask. At startup it probes each in turn — write a
+register, read it back — and keeps whichever answers:
+
+```
+[sx1262] not on the header module pinout: SPI returned 0000 — check MISO...
+[sx1262] found on the B2B kit pinout — NSS 41, RST 42, BUSY 40, DIO1 39
+```
+
+| | B2B kit | Header module |
 |---|---|---|
 | SCK | GPIO7 | GPIO7 |
 | MOSI | GPIO9 | GPIO9 |
@@ -108,7 +139,15 @@ gives you SPI that reads back all zeros.
 | **BUSY** | **GPIO40** | GPIO2 |
 | **DIO1** | **GPIO39** | GPIO1 |
 
-All eight are set in `config.py`.
+A pinout is skipped rather than probed if it collides with something the
+lamp already uses, since probing means driving those pins and driving
+the LED data line writes garbage down the strip. With the default
+`LED_PIN = 2` that rules out the header pinout — so **move the LED to
+another pin if you have the standalone module**, and the firmware will
+find it.
+
+`SX_*_PIN` in `config.py` is tried first, before either guess. It only
+matters for a board that is neither of the above.
 
 The B2B column matches Seeed's own RadioLib example for this kit —
 `SX1262 radio = new Module(41, 39, 42, 40)`, which is
@@ -141,7 +180,7 @@ mpremote connect /dev/ttyACM0 run tools/radio_check.py
 It works from the bottom up and stops at the first failure, so you learn
 whether it is wiring, the TCXO, or simply no gateway in range:
 
-1. prints the pins in use, and what each variant expects
+1. probes both pinouts and reports which one answered
 2. SPI + reset — writes a register and reads it back
 3. `begin()` with the TCXO powered
 4. transmits a **real LoRaWAN frame** if ABP keys are set, so it should
@@ -155,9 +194,13 @@ If steps 1–4 pass but nothing appears in TTN Live data, the radio is
 fine and there is no gateway in range. That is a coverage problem, not a
 hardware one.
 
+If step 1 finds nothing on either pinout, it is the connector rather
+than a setting — nothing in `config.py` can cause both to fail. Press
+the two boards together again until they click.
+
 ## Antenna
 
-The Wio-E5 ships with a small antenna, which is fine to start. Before
+Both modules ship with a small antenna, which is fine to start. Before
 buying anything better, know that **placement beats antenna by about an
 order of magnitude**:
 

@@ -17,8 +17,8 @@ import utime
 
 sys.path.append("/lamp")
 
-from net.sx1262 import SX1262            # noqa: E402
-from net.lorawan_crypto import build_uplink   # noqa: E402
+from net.sx1262 import open_radio, PINOUTS   # noqa: E402
+from net.lorawan_crypto import build_uplink  # noqa: E402
 
 try:
     import config
@@ -43,28 +43,27 @@ def hexb(value, length):
 
 print("\n=== Wio-SX1262 check ===\n")
 
-# ── 1. Pins ──────────────────────────────────────────────────
+# ── 1 & 2. Find the chip ─────────────────────────────────────
 # The kit's board-to-board connector and the standalone module's header
-# use completely different pins. Picking the wrong set is the most
-# common reason for "SPI reads all zeros".
-pins = dict(sck=cfg("SX_SCK_PIN", 7), mosi=cfg("SX_MOSI_PIN", 9),
-            miso=cfg("SX_MISO_PIN", 8), nss=cfg("SX_NSS_PIN", 41),
-            reset=cfg("SX_RESET_PIN", 42), busy=cfg("SX_BUSY_PIN", 40),
-            dio1=cfg("SX_DIO1_PIN", 39))
-print("1. pins: %s" % pins)
-print("   B2B kit expects NSS 41, RST 42, BUSY 40, DIO1 39")
-print("   header module expects NSS 4 — set SX_*_PIN in config.py\n")
+# use completely different pins, so both are probed and whichever
+# answers is the one used. There is nothing to choose.
+print("1. looking for the radio")
+for name, pins in PINOUTS:
+    print("   %-14s NSS %2d  RST %2d  BUSY %2d  DIO1 %2d"
+          % (name, pins["nss"], pins["reset"], pins["busy"], pins["dio1"]))
+print()
 
-radio = SX1262(spi_id=cfg("SX_SPI_ID", 1), **pins)
-
-# ── 2. Is the chip there? ────────────────────────────────────
-ok, detail = radio.probe()
-print("2. SPI + reset: %s" % ("OK" if ok else "FAILED"))
-print("   %s\n" % detail)
-if not ok:
+radio, detail = open_radio(spi_id=cfg("SX_SPI_ID", 1),
+                           avoid=[cfg("LED_PIN", 2)] + list(cfg("TOUCH_PINS", [])))
+print("\n2. SPI + reset: %s" % ("OK" if radio else "FAILED"))
+if radio is None:
+    print("   %s\n" % detail)
     print("   Stop here. Nothing else can work until this passes.")
-    print("   Check the B2B connector is seated, or the header wiring.")
+    print("   Neither pinout answered, so it is the connector rather than")
+    print("   a config mistake: check the B2B connector is fully seated,")
+    print("   or the header wiring if you have the standalone module.")
     raise SystemExit(1)
+print("   %s\n" % radio.pins)
 
 # ── 3. Bring it up, TCXO and all ─────────────────────────────
 # probe() only proves SPI. The TCXO is what decides whether the radio

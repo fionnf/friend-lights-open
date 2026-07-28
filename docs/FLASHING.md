@@ -189,10 +189,38 @@ when you need to stop the main loop to poke at something.
 
 ---
 
-## 7. The Wio-E5
+## 7. The radio
 
-The Wio-E5 arrives with LoRaWAN AT firmware already on it. **You do not
-flash it** — that's the whole reason for choosing it.
+**Neither module gets flashed.** The Wio-SX1262 has no processor in it —
+the LoRaWAN stack runs on the XIAO with everything else. The Wio-E5 has
+one, but arrives with AT firmware already on it.
+
+### Wio-SX1262
+
+Check it before building anything on top of it:
+
+```bash
+mpremote connect /dev/ttyACM0 cp tools/radio_check.py :
+mpremote connect /dev/ttyACM0 run radio_check.py
+```
+
+⚠️ It transmits — **screw the antenna on first.** Transmitting into an
+open connector can damage the PA.
+
+It probes both ways the module can be attached, keeps whichever answers,
+and then works upward: SPI, the TCXO, a real LoRaWAN frame, and finally
+listening for a downlink. It stops at the first thing that is wrong, so
+you learn *which* thing.
+
+If neither pinout answers, it is the connector rather than a setting —
+no value in `config.py` can make both fail. Press the two boards
+together until they click.
+
+If everything passes but nothing shows up in TTN's Live data, the radio
+is fine and there is no gateway in range. That is coverage, not
+hardware, and no amount of poking at the board will change it.
+
+### Wio-E5
 
 Worth confirming it's alive and at the expected baud rate before blaming
 anything else. With the module wired up and MicroPython running:
@@ -278,11 +306,13 @@ what's on your machine.
 A file didn't copy. `mpremote ls :lamp` and compare against
 [Layout](../README.md#layout).
 
-### It joins, then stops responding after a few minutes
+### It works, then stops responding after a few minutes
 
-Almost always power. The Wio-E5 draws current spikes when transmitting;
-if it shares a weak 3V3 rail with an LED strip, the brownout takes the
-whole board down. Power the strip from 5 V directly, not through the XIAO.
+Almost always power. Either radio draws a current spike when it
+transmits — an SX1262 at 14 dBm pulls around 45 mA on top of everything
+else — and if it shares a weak 3V3 rail with an LED strip the brownout
+takes the whole board down. Power the strip from 5 V directly, not
+through the XIAO.
 
 ---
 

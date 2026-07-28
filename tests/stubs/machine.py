@@ -4,9 +4,25 @@ class ResetCalled(BaseException):
 reset_count = [0]
 class Pin:
     OUT = 0; IN = 1
-    def __init__(self, num, mode=OUT): self.num = num
-    def init(self, mode): pass
-    def value(self, v=None): return 0
+    def __init__(self, num, mode=OUT, value=None):
+        self.num = num; self.mode = mode; self._v = value or 0
+    def init(self, mode): self.mode = mode
+    def value(self, v=None):
+        if v is None:
+            # BUSY is read to decide whether the radio is still chewing.
+            # Always low: the stub chip is never busy.
+            return 0
+        self._v = v
+class SPI:
+    """Enough of a bus to construct a driver. Reads return zeros, which
+    is what a real bus with nothing on the other end also does — so a
+    driver probed against this stub correctly reports 'not there'."""
+    def __init__(self, id=0, baudrate=0, polarity=0, phase=0,
+                 sck=None, mosi=None, miso=None):
+        self.id = id; self.written = []; self.deinit_count = 0
+    def write(self, data): self.written.append(bytes(data))
+    def read(self, n, write=0): return bytes(n)
+    def deinit(self): self.deinit_count += 1
 class WDT:
     def __init__(self, timeout=0): self.timeout = timeout; self.feeds = 0
     def feed(self): self.feeds += 1

@@ -13,15 +13,17 @@ LAMP_ID   = 1
 LAMP_NAME = ""                # optional; appears in the WiFi network name
 
 # ── Which radio ─────────────────────────────────────────────
+# "SX1262" Wio-SX1262 — a bare radio, so the LoRaWAN stack runs on the
+#          ESP32 in Python. Uses ABP, because an OTAA join needs a
+#          receive window opened 5 s after transmitting and held for
+#          milliseconds, which MicroPython's garbage collector can pause
+#          straight through.
 # "E5"     Wio-E5 — runs the LoRaWAN stack itself, driven by AT commands
-#          over UART. Nothing to get wrong; uses OTAA.
-# "SX1262" Wio-SX1262 — a bare radio, so the stack runs on the ESP32.
-#          Uses ABP, because an OTAA join needs a receive window opened
-#          5 s after transmitting and held for milliseconds, which
-#          MicroPython's garbage collector can pause straight through.
-LORA_RADIO = "E5"
+#          over UART. Uses OTAA. Certified firmware, so lower risk, but
+#          it is a different module — it does not fit the XIAO kit.
+LORA_RADIO = "SX1262"
 
-# ── SX1262 only: ABP session, from the TTN console ──────────
+# ── SX1262: the ABP session, from the TTN console ───────────
 # Register the device with Activation mode = ABP, then copy these.
 # DevAddr is shown big-endian; the firmware reverses it for the air.
 LORA_DEV_ADDR = ""             # 8 hex characters
@@ -30,9 +32,12 @@ LORA_APP_SKEY = ""             # 32 hex
 LORA_SF       = 9              # must match RX2 on your frequency plan
 LORA_TX_POWER = 14             # dBm; EU868 legal ceiling
 
-# SPI to the Wio-SX1262. These are the BOARD-TO-BOARD kit pins. The
-# standalone module on the through-hole header uses different ones —
-# NSS is GPIO4 there. Wrong set = SPI reads back all zeros.
+# SPI to the Wio-SX1262 — the BOARD-TO-BOARD kit pins.
+#
+# You can usually ignore this block. There are two ways to attach the
+# module and they use different pins, so the firmware probes both at
+# startup and keeps whichever answers; these are only the first guess.
+# Set them for a board that is neither.
 SX_SPI_ID    = 1
 SX_SCK_PIN   = 7
 SX_MOSI_PIN  = 9
@@ -43,6 +48,7 @@ SX_BUSY_PIN  = 40
 SX_DIO1_PIN  = 39
 
 # ── E5 only: OTAA keys (The Things Network) ─────────────────
+# Ignore all of this if LORA_RADIO is "SX1262".
 # Register the device in the TTN console, then paste its values here.
 # Use OTAA. DevEui is per-device; AppEui and AppKey come from the
 # application you registered it under.

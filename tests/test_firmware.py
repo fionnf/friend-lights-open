@@ -146,6 +146,105 @@ def run_transport_checks():
     check("malformed downlink does not raise", lora.poll() == [])
 
 
+def run_abp_checks():
+    """The SX1262 path. The radio itself needs hardware, but everything
+    around it — a module that is not there, a retry, a frame going out —
+    does not, and those are what decide whether a lamp with a loose
+    board-to-board connector is a lamp or a brick."""
+    print("\nabp transport (SX1262)")
+    from net.lorawan_abp import LoRaWANABP
+    import codec
+
+    # ── No module attached ──
+    looked = []
+
+    def nothing_there():
+        looked.append(1)
+        return None
+
+    lora = LoRaWANABP(nothing_there, b"\x26\x0b\x11\x11",
+                      b"\x00" * 16, b"\x11" * 16)
+    check("a missing radio does not raise", lora.start() is False)
+    check("...and the lamp is simply not connected", lora.connected is False)
+    check("...and sending is refused rather than crashing",
+          lora.send(codec.encode(1, 0, 0, 0)) is False)
+    lora.start()
+    # Looking again on every retry is the whole point: a module seated
+    # after power-on, or a brownout during the probe, must recover
+    # without anyone unplugging the lamp.
+    check("...and every retry looks again", len(looked) == 2, looked)
+
+    # ── Module attached ──
+    class FakeRadio:
+        def __init__(self):
+            self.sent = []
+            self.listening = None
+
+        def begin(self, **kw):
+            return True
+
+        def listen(self, freq, sf):
+            self.listening = (freq, sf)
+
+        def set_frequency(self, hz):
+            self.freq = hz
+
+        def set_modulation(self, sf, bw, cr):
+            pass
+
+        def send(self, frame):
+            self.sent.append(frame)
+            return True
+
+        def receive(self):
+            return None
+
+        def sleep(self):
+            pass
+
+    radio = FakeRadio()
+    lora = LoRaWANABP(lambda: radio, b"\x26\x0b\x11\x11",
+                      b"\x00" * 16, b"\x11" * 16)
+    check("a radio that answers brings the link up", lora.start() is True)
+    check("and Class C parks on RX2",
+          radio.listening == (869_525_000, 9), radio.listening)
+
+    check("a frame goes out", lora.send(codec.encode(2, 7, 8, 9)) is True)
+    check("...as a full LoRaWAN uplink, not a bare payload",
+          len(radio.sent) == 1 and len(radio.sent[0]) == 10 + 13,
+          [len(f) for f in radio.sent])
+    check("...and the receiver was reopened afterwards",
+          radio.listening == (869_525_000, 9))
+    check("the next is throttled", lora.send(codec.encode(2, 7, 8, 9)) is False)
+
+    # ── No keys ──
+    blind = LoRaWANABP(lambda: radio, None, None, None)
+    check("no ABP keys is refused before touching the radio",
+          blind.start() is False)
+
+
+def run_finder_checks():
+    """main.py's radio finder, against the stub bus — which reads back
+    zeros, exactly like a bus with nothing on the other end."""
+    print("\nfinding the radio from main.py")
+    import main as fw
+
+    import contextlib, io
+    log = io.StringIO()
+    with contextlib.redirect_stdout(log):
+        radio = fw._find_sx1262()
+    said = log.getvalue()
+
+    check("no module found on a bus with nothing on it", radio is None)
+    # config.py in the stubs puts the LEDs on GPIO2, which is BUSY on the
+    # header pinout. Probing means driving it, and driving it writes
+    # garbage down the strip — so that pinout must be skipped, not tried.
+    check("the pinout that collides with the LED line was skipped",
+          "skipping" in said and "GPIO2" in said, said)
+    check("and the failure says what to do next",
+          "radio_check" in said, said)
+
+
 def run_router_checks():
     print("\nrouter")
     from net.transport import Router, Transport
@@ -189,6 +288,8 @@ def run_router_checks():
 if __name__ == "__main__":
     run()
     run_transport_checks()
+    run_abp_checks()
+    run_finder_checks()
     run_router_checks()
     print("\n%d failed" % len(failures) if failures else "\nall passed")
     sys.exit(1 if failures else 0)

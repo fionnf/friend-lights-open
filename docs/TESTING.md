@@ -139,12 +139,14 @@ much easier here than by waiting three hours next to a real one.
 python3 tests/test_codec.py         # wire format, and rejecting junk
 python3 tests/test_shared_state.py  # CRDT convergence
 python3 tests/test_portal.py        # portal routing, and rejecting junk
+python3 tests/test_lorawan.py       # crypto, against published vectors
+python3 tests/test_sx1262.py        # finding the radio, either pinout
 python3 tests/test_regressions.py   # one case per bug that was shipped
 python3 tests/test_firmware.py      # actually runs main() against stubs
 ```
 
-No dependencies, no test runner. `tools/deploy.sh` runs all three and
-refuses to load anything if they fail.
+No dependencies, no test runner. `tools/deploy.sh` runs every one of
+them and refuses to load anything if any fails.
 
 `test_shared_state.py` is the one that matters: each case is a specific
 way the network will misbehave — reordering, duplication, heavy loss,
@@ -152,6 +154,19 @@ simultaneous edits, reboots — and asserts the lamps still agree anyway.
 
 `test_regressions.py` holds one case per bug that actually shipped —
 nothing goes in it speculatively. Every test in it failed before its fix.
+
+`test_lorawan.py` checks the crypto against RFC 4493 and FIPS-197. A
+wrong message integrity code gives you a lamp that transmits perfectly
+and is ignored by the network, with nothing in the TTN console to say a
+frame ever arrived — so published numbers are the only way to have any
+confidence before a gateway exists.
+
+`test_sx1262.py` covers finding the radio rather than driving it. The
+register-level driver genuinely needs the chip — reading a register back
+*is* the test, and a stub that returns what it was handed only tests
+itself. What it does cover is which pinout gets probed, in what order,
+and that a pinout sharing a pin with the LED strip is skipped instead of
+driven.
 
 `test_firmware.py` **executes** `main()` rather than compiling it. On the
 original project a bad push could be fixed over the air. Here it cannot:

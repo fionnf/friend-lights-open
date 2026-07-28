@@ -20,7 +20,9 @@
 #   NSS  GPIO41  RST  GPIO42  BUSY GPIO40  DIO1 GPIO39
 #
 # If you have the standalone module on the header instead, NSS is GPIO4
-# and RST/BUSY/DIO1 move too — set them in config.py.
+# and RST/BUSY/DIO1 move too. You do not have to know which you have:
+# `open_radio()` at the bottom of this file tries each in turn and keeps
+# whichever one answers.
 #
 # Corroborated by Seeed's own RadioLib example for this kit:
 #     SX1262 radio = new Module(41, 39, 42, 40);
@@ -81,16 +83,40 @@ class SX1262:
     def __init__(self, spi=None, *, sck=7, mosi=9, miso=8,
                  nss=41, reset=42, busy=40, dio1=39, spi_id=1,
                  tcxo_voltage=1.8, tcxo_delay_us=5000):
+        self.pins = {"sck": sck, "mosi": mosi, "miso": miso, "nss": nss,
+                     "reset": reset, "busy": busy, "dio1": dio1}
         self._nss = Pin(nss, Pin.OUT, value=1)
         self._reset = Pin(reset, Pin.OUT, value=1)
         self._busy = Pin(busy, Pin.IN)
         self._dio1 = Pin(dio1, Pin.IN)
+        self._owns_spi = spi is None
         self._spi = spi or SPI(spi_id, baudrate=2_000_000, polarity=0,
                                phase=0, sck=Pin(sck), mosi=Pin(mosi),
                                miso=Pin(miso))
         self._rx_active = False
         self._tcxo_voltage = tcxo_voltage
         self._tcxo_delay_us = tcxo_delay_us
+
+    def close(self):
+        """Give the bus and the pins back.
+
+        Only needed when trying one pinout after another: an SPI
+        peripheral that is still claimed cannot be re-created on
+        different pins, and an NSS or RST line left driven can hold the
+        chip on the OTHER pinout in reset — so the second attempt would
+        fail for a reason created by the first.
+        """
+        self._rx_active = False
+        if self._owns_spi:
+            try:
+                self._spi.deinit()
+            except Exception:
+                pass
+        for pin in (self._nss, self._reset):
+            try:
+                pin.init(Pin.IN)
+            except Exception:
+                pass
 
     # ── Plumbing ────────────────────────────────────────────
 
@@ -328,3 +354,67 @@ class SX1262:
     def sleep(self):
         self._rx_active = False
         self._cmd(_SET_SLEEP, b"\x00")
+
+
+# ── Finding the radio ────────────────────────────────────────
+# There are two ways to attach a Wio-SX1262 to a XIAO, they use entirely
+# different pins, and choosing wrong gives you SPI that reads back all
+# zeros — which looks exactly like a broken board. Since a probe is
+# cheap and unambiguous, there is no reason to make anyone work out
+# which one they bought: try both and keep the one that answers.
+
+PINOUTS = (
+    ("B2B kit", {"sck": 7, "mosi": 9, "miso": 8,
+                 "nss": 41, "reset": 42, "busy": 40, "dio1": 39}),
+    ("header module", {"sck": 7, "mosi": 9, "miso": 8,
+                       "nss": 4, "reset": 3, "busy": 2, "dio1": 1}),
+)
+
+
+def open_radio(spi_id=1, preferred=None, avoid=(), log=print):
+    """Return (radio, description), or (None, reason) if none answered.
+
+    `preferred` is whatever config.py names, and is tried first so an
+    unusual board is never overridden by a guess. `avoid` is the pins
+    already spoken for — the LED data line and the touch pads. A pinout
+    that would collide with those is skipped rather than probed, because
+    probing means driving them, and driving the LED line means writing
+    garbage to the strip.
+    """
+    avoid = set(avoid or ())
+    candidates = [("config.py", dict(preferred))] if preferred else []
+    candidates += [(name, dict(pins)) for name, pins in PINOUTS]
+
+    seen = []
+    reason = "no pinout could be tried"
+    for name, pins in candidates:
+        key = tuple(sorted(pins.items()))
+        if key in seen:
+            continue                    # config.py named a known pinout
+        seen.append(key)
+
+        clash = sorted(set(pins.values()) & avoid)
+        if clash:
+            reason = ("%s pinout needs GPIO%s, already used by the LEDs "
+                      "or touch pads"
+                      % (name, "/".join(str(p) for p in clash)))
+            log("[sx1262] skipping: %s" % reason)
+            continue
+
+        radio = None
+        try:
+            radio = SX1262(spi_id=spi_id, **pins)
+            ok, detail = radio.probe()
+        except Exception as e:
+            ok, detail = False, "%s" % e
+        if ok:
+            log("[sx1262] found on the %s pinout — NSS %d, RST %d, "
+                "BUSY %d, DIO1 %d" % (name, pins["nss"], pins["reset"],
+                                      pins["busy"], pins["dio1"]))
+            return radio, name
+        reason = "%s pinout: %s" % (name, detail)
+        log("[sx1262] not on the %s" % reason)
+        if radio is not None:
+            radio.close()
+
+    return None, reason

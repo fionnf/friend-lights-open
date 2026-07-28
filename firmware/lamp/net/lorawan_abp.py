@@ -68,7 +68,14 @@ class LoRaWANABP(Transport):
                  channels=EU868_UPLINK_CHANNELS,
                  rx2_frequency=EU868_RX2_FREQUENCY, rx2_sf=EU868_RX2_SF):
         Transport.__init__(self)
-        self.radio = radio
+        # `radio` may be a driver, or a callable that goes and finds one.
+        # The callable form matters: opening the radio inside start()
+        # rather than here means a lamp that boots with the module not
+        # seated — or browns out mid-probe — is retried by
+        # Router.service() instead of staying dark until someone
+        # power-cycles it.
+        self._find_radio = radio if callable(radio) else None
+        self.radio = None if self._find_radio else radio
         # The console shows DevAddr big-endian; the air format is little-
         # endian. Reversing it here, once, is why nothing else has to
         # think about it — and getting it wrong produces a frame the
@@ -140,8 +147,18 @@ class LoRaWANABP(Transport):
     def start(self, tick=None):
         self.connected = False
         if not (self.dev_addr and self.nwk_skey and self.app_skey):
-            print("[lorawan] no ABP keys configured")
+            print("[lorawan] no ABP keys — put LORA_DEV_ADDR, LORA_NWK_SKEY")
+            print("          and LORA_APP_SKEY in config.py, from the TTN")
+            print("          console with Activation mode = ABP")
             return False
+        if self.radio is None:
+            try:
+                self.radio = self._find_radio()
+            except Exception as e:
+                print("[lorawan] looking for the radio failed: %s" % e)
+                return False
+            if self.radio is None:
+                return False            # already explained by the finder
         try:
             if not self.radio.begin(frequency=self.channels[0], sf=self.sf,
                                     power=self.tx_power):
