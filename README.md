@@ -41,16 +41,32 @@ not a router. Stay connected anyway.
 
 ## Build one
 
-**→ [docs/SETUP.md](docs/SETUP.md)** walks the whole thing, about an hour.
+Everything that happens over the USB cable is one command:
 
-| | | |
+```bash
+python3 tools/install.py
+```
+
+It installs the flashing tools, finds the board, fetches and flashes
+MicroPython, asks for your TTN values (or reads `.env` if it exists),
+runs every test, loads the firmware, and offers a radio check. **Rerun
+it any time** — it looks at what exists and does the next thing, so a
+half-finished install or a firmware update is the same command.
+
+What it cannot do for you, because they happen in a browser: clicking
+the radio module onto the XIAO and soldering the strip, registering the
+two devices with TTN, and pasting the bridge into Cloudflare.
+
+**→ [docs/SETUP.md](docs/SETUP.md)** walks all of it, about an hour:
+
+| | | Covered by `install.py` |
 |---|---|---|
-| 1 | Build the lamp | XIAO ESP32S3 + Wio-SX1262 + an LED strip |
-| 2 | Flash MicroPython | one USB cable |
-| 3 | Set up The Things Network | free; a glossary comes first |
-| 4 | Deploy the bridge | 40 lines, pasted into Cloudflare |
-| 5 | Configure and load | `cp .env.example .env`, fill it in, `tools/apply_env.py` |
-| 6 | First light | |
+| 1 | Build the lamp | no — it clicks and solders nothing |
+| 2 | Flash MicroPython | **yes** |
+| 3 | Set up The Things Network | no — free account, a glossary comes first |
+| 4 | Deploy the bridge | no — 40 lines, pasted into Cloudflare |
+| 5 | Configure and load | **yes** |
+| 6 | First light | **yes** — it ends with a radio check |
 
 **Check coverage before you order anything.** Look up both addresses on
 the [TTN map](https://www.thethingsnetwork.org/map). No gateway in range
@@ -220,12 +236,13 @@ firmware/
     └── net/                # transport.py, lorawan_e5.py, mqtt_wifi.py
 bridge/worker.js            # uplink -> the other lamp's downlink
 .env                        # every secret, in one gitignored file
-tests/                      # seven suites, no dependencies
+tests/                      # eight suites, no dependencies
 docs/
 ```
 
 | Tool | |
 |---|---|
+| `tools/install.py` | **the whole install, one command, rerunnable** |
 | `tools/apply_env.py` | write both lamp configs from `.env` |
 | `tools/deploy.sh --lamp N` | test, then load a lamp |
 | `tools/preview_portal.py` | the lamp's page, on your laptop |

@@ -44,6 +44,14 @@ echo
 echo "== deploying to $PORT =="
 mp() { mpremote connect "$PORT" "$@"; }
 
+# A lamp that has run before has an 8 s hardware watchdog armed, and on
+# the ESP32 a watchdog cannot be stopped — only stretched. Left alone it
+# resets the board partway through the copy below, and a partial copy of
+# firmware with no over-the-air recovery is the one way this project can
+# genuinely brick a lamp. Harmless on a fresh board.
+mp exec "from machine import WDT
+WDT(timeout=600000)" 2>/dev/null || true
+
 mp mkdir :lamp     2>/dev/null || true
 mp mkdir :lamp/net 2>/dev/null || true
 mp mkdir :lamp/www 2>/dev/null || true

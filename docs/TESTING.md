@@ -143,6 +143,7 @@ python3 tests/test_lorawan.py       # crypto, against published vectors
 python3 tests/test_sx1262.py        # finding the radio, either pinout
 python3 tests/test_regressions.py   # one case per bug that was shipped
 python3 tests/test_firmware.py      # actually runs main() against stubs
+python3 tests/test_install.py       # the install wizard's decisions
 ```
 
 No dependencies, no test runner. `tools/deploy.sh` runs every one of

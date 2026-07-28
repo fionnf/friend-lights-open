@@ -3,6 +3,18 @@
 Start to finish. Roughly an hour for the first lamp, twenty minutes for
 the second.
 
+> **The short way:** steps 2, 5 and 6 — everything that happens over
+> the USB cable — are one rerunnable command:
+>
+> ```bash
+> python3 tools/install.py
+> ```
+>
+> You still do step 1 (hands), step 3 (the TTN console) and step 4
+> (Cloudflare) yourself; the wizard asks for the values step 3 gives
+> you. The pages below remain the reference for what it is doing, and
+> for doing it by hand.
+
 If you have never used The Things Network, don't skip the box in step 3 —
 five minutes there makes every later screen make sense.
 

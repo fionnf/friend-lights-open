@@ -3,6 +3,11 @@
 Getting MicroPython onto a XIAO ESP32S3, and the lamp firmware on top of
 it. Allow 20 minutes the first time, 5 minutes for each lamp after.
 
+> All of this page is automated by **`python3 tools/install.py`** — it
+> detects the port, downloads the right image, walks you through
+> bootloader mode, flashes, and loads the firmware. This page is the
+> reference for what it does, and for doing it by hand.
+
 If something goes wrong, jump to [When it won't
 cooperate](#when-it-wont-cooperate) — nearly every failure is one of five
 things, and two of them are the cable.

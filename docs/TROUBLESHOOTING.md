@@ -36,11 +36,15 @@ Where to look is covered in
 
 ## Setup and config
 
+Most of this section is avoided entirely by `python3 tools/install.py`,
+which detects what exists and does the next thing.
+
 | Symptom | Cause | Fix |
 |---|---|---|
 | `apply_env.py` says "Not writing anything" | It found something that would break the pair | Read the reason — it names the exact field |
-| `No .env yet` | Not created | `cp .env.example .env` |
+| `No .env yet` | Not created | `python3 tools/install.py` asks for the values, or `cp .env.example .env` |
 | Deploy says "No config for lamp N" | `.env` not applied | `python3 tools/apply_env.py` |
+| Board resets partway through a deploy | The old firmware's 8 s watchdog — it cannot be stopped, only stretched | Both `install.py` and `deploy.sh` stretch it before copying; rerun either and it completes |
 | Real keys showed up in `git status` | `.env` or a lamp config got tracked | `git rm --cached .env firmware/config.lamp*.py` — untracks without deleting |
 
 ## The strip
