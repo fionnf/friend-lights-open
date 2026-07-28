@@ -14,6 +14,7 @@
 # inverted-IQ erratum, image calibration, IRQ hygiene. Fewer lines that
 # are ours to be wrong.
 
+import utime
 from machine import Pin, SPI
 
 # LoRaWAN EU868: explicit header, CR 4/5, public sync word. The driver
@@ -43,9 +44,18 @@ class UpstreamSX1262:
     # ── The interface lorawan_abp.py speaks ─────────────────
 
     def begin(self, frequency, sf=9, bw=125_000, cr=1, power=14,
-              sync_word=None, preamble=8):
+              preamble=8, sync_word=None):
         try:
             self._modem.standby()
+            # The chip's power-on calibration ran before DIO3 was told
+            # to power the TCXO, so it calibrated against a clock that
+            # was not there yet — datasheet 13.3.6 says to relaunch it.
+            # Upstream defines calibrate() and calibrate_image() and
+            # never calls either; both failures are silent, and they
+            # differ: no calibrate is "configured, transmits nothing
+            # usable", no image calibration is "transmits perfectly,
+            # quietly deaf".
+            self._modem.calibrate()
             self._modem.configure({
                 "freq_khz": frequency // 1000,
                 "sf": sf,
@@ -63,6 +73,11 @@ class UpstreamSX1262:
                 # mains-powered lamp that listens continuously.
                 "rx_boost": True,
             })
+            # AFTER configure(), because it calibrates for whatever
+            # frequency is currently set and takes no argument. Every
+            # frequency this lamp uses — the three uplink channels and
+            # RX2 — is in the same 863-870 MHz band, so once is enough.
+            self._modem.calibrate_image()
             return True
         except Exception as e:
             print("[sx1262-mplib] begin failed: %s" % e)
@@ -77,10 +92,30 @@ class UpstreamSX1262:
         self._modem.configure({"sf": sf, "bw": str(int(bw) // 1000),
                                "coding_rate": 4 + cr})
 
-    def send(self, frame):
-        # Blocks for the frame's airtime (~a third of a second at SF9).
-        # Returns a truthy timestamp on success.
-        return bool(self._modem.send(frame))
+    def send(self, frame, timeout_ms=5000):
+        """Transmit, with a deadline.
+
+        Upstream's blocking send() loops until TX_DONE with no bound at
+        all, so a missed DIO1 edge hangs it forever — and the lamp's
+        watchdog is 8 s, which would turn one lost interrupt into a
+        permanent reboot loop. So drive the low-level API instead and
+        give up in bounded time; the caller turns False into a
+        reconnect, which is recoverable.
+        """
+        self._modem.prepare_send(frame)
+        self._modem.start_send()
+        deadline = utime.ticks_add(utime.ticks_ms(), timeout_ms)
+        while utime.ticks_diff(deadline, utime.ticks_ms()) > 0:
+            done = self._modem.poll_send()
+            # poll_send returns True while sending, and a ticks_ms
+            # TIMESTAMP when finished — which is 0 for one millisecond
+            # every ~12 days, so `bool()` here would call that a
+            # failure. Test for the sentinel, not for truthiness.
+            if done is not True:
+                return done is not False and done is not None
+            utime.sleep_ms(2)
+        self._modem.standby()        # do not leave the PA keyed
+        return False
 
     def listen(self, frequency, sf):
         """Class C: park on RX2 and stay there."""

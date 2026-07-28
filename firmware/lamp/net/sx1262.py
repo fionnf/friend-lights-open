@@ -203,6 +203,11 @@ class SX1262:
     # ── Setup ───────────────────────────────────────────────
 
     def reset(self):
+        # A reset wipes the chip's image calibration, so the record of
+        # having done it must go too — otherwise begin() skips it on
+        # every reconnect and the radio comes back transmitting
+        # perfectly and quietly deaf.
+        self._cal_band = None
         self._reset.value(0)
         utime.sleep_ms(2)
         self._reset.value(1)

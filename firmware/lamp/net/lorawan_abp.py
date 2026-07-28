@@ -61,6 +61,12 @@ def _hex(value, length):
 class LoRaWANABP(Transport):
 
     name = "lorawan"
+    # EU868 gives a device 1% duty cycle per sub-band, and our
+    # three uplink channels share one. At ~0.25 s of airtime a
+    # frame that is a 25 s gap; 30 s keeps a margin. Nothing else
+    # in the stack enforces this, and it is the one limit here
+    # that is law rather than etiquette.
+    min_gap_ms = 30_000
 
     def __init__(self, radio, dev_addr, nwk_skey, app_skey,
                  port=8, sf=9, tx_power=14,
@@ -221,10 +227,17 @@ class LoRaWANABP(Transport):
 
         self.radio.set_frequency(channel)
         self.radio.set_modulation(self.sf, 125000, 1)
-        ok = self.radio.send(frame)
-        # Back to listening whatever happened: in Class C the receiver
-        # must not be left closed, or downlinks stop arriving silently.
-        self.radio.listen(self.rx2_frequency, self.rx2_sf)
+        try:
+            ok = self.radio.send(frame)
+        finally:
+            # Back to listening WHATEVER happened — including an
+            # exception out of send(). In Class C a closed receiver
+            # means downlinks stop arriving with nothing to show for
+            # it, and the next retry is at least a minute away.
+            try:
+                self.radio.listen(self.rx2_frequency, self.rx2_sf)
+            except Exception as e:
+                print("[lorawan] could not reopen the receiver: %s" % e)
         if not ok:
             raise OSError("transmit timed out")
         print("[lorawan] sent fcnt %d on %.1f MHz" % (fcnt, channel / 1e6))

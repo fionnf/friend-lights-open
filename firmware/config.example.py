@@ -53,12 +53,15 @@ SX_RESET_PIN = 42
 SX_BUSY_PIN  = 40
 SX_DIO1_PIN  = 39
 
+# Whether this lamp uses LoRa at all. Applies to BOTH radios — it is
+# not part of the E5 block below.
+LORA_ENABLED = True
+
 # ── E5 only: OTAA keys (The Things Network) ─────────────────
 # Ignore all of this if LORA_RADIO is "SX1262".
 # Register the device in the TTN console, then paste its values here.
 # Use OTAA. DevEui is per-device; AppEui and AppKey come from the
 # application you registered it under.
-LORA_ENABLED = True
 # DevEUI: unique per lamp — let TTN generate it.
 LORA_DEV_EUI = "0000000000000000"
 # JoinEUI (called AppEUI in the older spec): identifies the join server,
@@ -79,18 +82,33 @@ LORA_TX_PIN  = 43
 LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
-# The sending budget. The limit is NOT our own airtime — 30 s/day at
-# ~0.2 s a frame allows about 150 uplinks. The limit is that every
-# uplink the bridge forwards becomes a DOWNLINK on your friend's lamp,
-# and TTN allows each device only TEN downlinks a day.
+# How many messages a day this lamp may send, and how many may go out
+# back-to-back before that average applies. Spent as a token bucket, so
+# the first LORA_BURST touches of a quiet day transmit IMMEDIATELY and
+# the budget refills steadily; only an unusually busy run ever waits.
 #
-# It is spent as a token bucket, not a fixed gap: up to LORA_BURST
-# touches go out IMMEDIATELY, and the budget refills one message every
-# LORA_MIN_INTERVAL_MS. So on a normal day every touch arrives within
-# seconds, and only a run of more than LORA_BURST touches starts
-# waiting. Steady-state total: ~8 changes + 2 heartbeats = 10 a day.
-LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
-LORA_BURST           = 6
+# 0 = no daily budget. That is allowed, and it is NOT unlimited: the
+# EU868 duty cycle still applies (see below), so the fastest this lamp
+# will ever speak is one message every 30 s.
+#
+# Worth knowing before you raise it: every message you send becomes a
+# DOWNLINK on your friend's lamp, and downlinks are the expensive
+# direction. TTN's Fair Use Policy asks for at most 10 a day per
+# device, and while nothing enforces that, a gateway physically cannot
+# receive while it transmits — so heavy downlink use degrades the
+# shared gateway for everyone near it, including you. 48 is generous
+# and still neighbourly.
+LORA_DAILY_BUDGET = 48
+LORA_BURST        = 6
+
+# The duty cycle is the one limit that is LAW rather than etiquette.
+# EU868 allows a device 1% per sub-band; at ~0.25 s of airtime per
+# frame that is a gap of ~25 s, and nothing else in the stack enforces
+# it. The firmware therefore never sends faster than every 30 s, no
+# matter what the budget above says.
+#
+# LORA_MIN_INTERVAL_MS still works if you prefer to set the gap
+# directly — it overrides LORA_DAILY_BUDGET when present.
 
 # ── WiFi (optional) ─────────────────────────────────────────
 # Entirely optional. A lamp with no WiFi works perfectly over LoRa alone;
@@ -144,12 +162,11 @@ BREATHE_DEPTH = 0.04
 
 
 
-# ── Watchdog ────────────────────────────────────────────────
 # ── Control network ─────────────────────────────────────────
 # The lamp runs its own WiFi network permanently, so you can control it
-# from a phone at any time without spending one of the ten daily
-# messages. Join "lamp-<name>" and the page opens by itself; if it
-# does not, browse to http://192.168.4.1
+# from a phone at any time without spending any of the daily message
+# budget. Join the network named below and the page opens by itself; if
+# it does not, browse to http://192.168.4.1
 #
 # WPA2 needs at least 8 characters. A shorter one is silently ignored by
 # the ESP32 and you would get an OPEN network without being told.
@@ -158,4 +175,7 @@ PORTAL_ALWAYS_ON = True
 PORTAL_SSID      = "deLENIghted-1"   # max 32 characters
 PORTAL_PASSWORD  = "lightupleni"        # min 8 — see above
 
+# ── Watchdog ────────────────────────────────────────────────
+# Reboots the board if the main loop stops feeding it for 8 s, so a hang
+# becomes one restart rather than a dead lamp.
 WATCHDOG_ENABLED = True

@@ -75,7 +75,7 @@ This is the part people expect to be hard. It isn't, because of the CRDT.
             └──────┬───────┘
                    │
             ┌──────▼───────┐
-            │ ColourEngine │   ← slow fade, see "Slow light"
+            │ ColourEngine │   ← eases in, see "Slow light"
             └──────────────┘
        ▲                        ▲
   ┌────┴────┐             ┌─────┴─────┐
@@ -172,7 +172,7 @@ something has to join the two. Three options, cheapest first:
 
 2. **Your own broker as the hub, TTN bridged in.** Keep an ordinary MQTT
    broker (HiveMQ's free tier is ample), and forward TTN uplinks to it
-   with a webhook → a ~40-line Cloudflare Worker on the free plan.
+   with a webhook → a small Cloudflare Worker on the free plan.
    Downlinks go back via TTN's HTTP API. More moving parts, but the web
    app keeps its own topics for scenes and alarms, which TTN's structured
    MQTT has no home for.
@@ -212,7 +212,8 @@ still means what it says.
 
 ## Slow light
 
-When a lamp learns a new total, it does not jump. It fades over minutes.
+When a lamp learns a new total, it does not jump. It eases in over a
+few seconds (`ARRIVAL_FADE_MS`).
 
 This began as an aesthetic choice — colour that arrives like post rather
 than like a text — and then turned out to be exactly what ten downlinks a

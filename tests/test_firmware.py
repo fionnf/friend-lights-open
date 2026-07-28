@@ -144,23 +144,43 @@ def run_transport_checks():
     check("reports connected", lora.connected is True)
 
     frame = codec.encode(2, 1234, 567, 8)
-    # Boot grants two tokens: one for the boot announcement, one so the
-    # first real touch still goes out immediately.
-    check("first send goes out", lora.send(frame) is True)
-    check("second send goes out too — the boot allowance",
-          lora.send(frame) is True)
-    check("the third is throttled", lora.send(frame) is False)
-    check("force bypasses the throttle", lora.send(frame, force=True) is True)
     import utime as _t
-    _t.sleep_ms(3 * 60 * 60 * 1000 + 1000)     # one refill later
-    check("one refill interval buys exactly one send",
-          lora.send(frame) is True and lora.send(frame) is False)
-    _t.sleep_ms(24 * 60 * 60 * 1000)           # a quiet day
-    for _ in range(lora.burst):
-        check("after a quiet day, a burst send goes out",
-              lora.send(frame) is True)
-    check("but the bucket never exceeds the burst",
+    gap = lora.min_gap_ms
+
+    # Two budgets are in play and they answer different questions. The
+    # BUCKET rations messages per day. The GAP is the EU868 duty cycle:
+    # the minimum spacing between any two transmissions, which is law
+    # and therefore holds even against `force`.
+    check("the first send goes out", lora.send(frame) is True)
+    check("a second one straight after is refused — duty cycle",
           lora.send(frame) is False)
+    check("...and force does not buy past the duty cycle",
+          lora.send(frame, force=True) is False)
+
+    _t.sleep_ms(gap + 1)
+    check("a gap later it goes — the boot allowance is two",
+          lora.send(frame) is True)
+
+    _t.sleep_ms(gap + 1)
+    check("the third is refused, budget spent", lora.send(frame) is False)
+    check("but force spends past the daily budget",
+          lora.send(frame, force=True) is True)
+
+    _t.sleep_ms(3 * 60 * 60 * 1000)            # one refill
+    check("one refill interval buys exactly one send",
+          lora.send(frame) is True)
+    _t.sleep_ms(gap + 1)
+    check("...and no more", lora.send(frame) is False)
+
+    _t.sleep_ms(24 * 60 * 60 * 1000)           # a quiet day
+    sent = 0
+    for _ in range(lora.burst + 2):
+        if lora.send(frame):
+            sent += 1
+        _t.sleep_ms(gap + 1)
+    check("a quiet day fills the bucket to the burst, and no further",
+          sent == lora.burst, sent)
+
     check("payload was sent as hex",
           any("MSGHEX" in w for w in uart.written))
 
@@ -175,6 +195,46 @@ def run_transport_checks():
 
     uart._out += b'+MSGHEX: PORT: 8; RX: "garbage"\r\n'
     check("malformed downlink does not raise", lora.poll() == [])
+
+
+def run_budget_checks():
+    """How a messages-per-day budget becomes a send interval.
+
+    The duty-cycle floor is the part that matters: it is a legal limit
+    rather than a policy one, nothing else in the stack enforces it,
+    and it must survive every way a config can ask to go faster —
+    including a config that asks for no budget at all."""
+    print("\nsend budget")
+    import main as fw
+
+    day = 24 * 60 * 60 * 1000
+    check("48 a day is every half hour",
+          fw.send_interval_ms(48) == day // 48, fw.send_interval_ms(48))
+    check("10 a day is the TTN Fair Use rate",
+          fw.send_interval_ms(10) == day // 10, fw.send_interval_ms(10))
+
+    floor = fw.DUTY_CYCLE_FLOOR_MS
+    check("a huge budget is still held at the duty-cycle floor",
+          fw.send_interval_ms(100000) == floor, fw.send_interval_ms(100000))
+    check("no budget means the floor, not zero",
+          fw.send_interval_ms(0) == floor, fw.send_interval_ms(0))
+    check("...and so does a missing one",
+          fw.send_interval_ms(None) == floor)
+    check("...and so does junk in the config",
+          fw.send_interval_ms("lots") == floor)
+    check("a negative budget cannot invert the gap",
+          fw.send_interval_ms(-5) == floor, fw.send_interval_ms(-5))
+
+    # Zero would divide by zero inside the token bucket's refill.
+    check("the interval is never zero, whatever is asked for",
+          all(fw.send_interval_ms(b) > 0
+              for b in (0, -1, None, "x", 10, 48, 999999)))
+
+    check("an explicit interval still wins, for older configs",
+          fw.send_interval_ms(48, explicit=3 * 60 * 60 * 1000)
+          == 3 * 60 * 60 * 1000)
+    check("but not below the floor",
+          fw.send_interval_ms(48, explicit=5) == floor)
 
 
 def run_abp_checks():
@@ -331,6 +391,7 @@ if __name__ == "__main__":
         'LORA_NWK_SKEY = "0123456789ABCDEF0123456789ABCDEF"\n'
         'LORA_APP_SKEY = "89ABCDEF0123456789ABCDEF01234567"\n'))
     run_transport_checks()
+    run_budget_checks()
     run_abp_checks()
     run_finder_checks()
     run_router_checks()

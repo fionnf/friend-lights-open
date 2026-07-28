@@ -1,219 +1,260 @@
 # Flashing
 
-Getting MicroPython onto a XIAO ESP32S3, and the lamp firmware on top of
-it. Allow 20 minutes the first time, 5 minutes for each lamp after.
+Getting MicroPython onto a XIAO ESP32S3, then the lamp firmware on top.
+Allow 20 minutes for the first board, about 5 for the second.
 
-> All of this page is automated by **`python3 tools/install.py`** — it
-> detects the port, downloads the right image, walks you through
-> bootloader mode, flashes, and loads the firmware. This page is the
-> reference for what it does, and for doing it by hand.
+There are two ways, and they do the same thing:
 
-If something goes wrong, jump to [When it won't
-cooperate](#when-it-wont-cooperate) — nearly every failure is one of five
-things, and two of them are the cable.
+| | |
+|---|---|
+| **[Thonny](#the-thonny-way)** — a small, free Python editor with a file browser. Nothing to install but Thonny itself, and you can see the board's files. **Start here.** |
+| **[The command line](#the-command-line-way)** — `python3 tools/install.py` does the whole thing in one command, including the parts Thonny makes you click. Better if you are comfortable in a terminal or are doing this repeatedly. |
 
----
+Both end with the same files on the board. Use whichever you like; you
+can switch between them freely.
 
-## 0. Tools
-
-```bash
-pip install esptool mpremote
-```
-
-- **esptool** writes the MicroPython firmware image (used once per board).
-- **mpremote** copies Python files and opens the REPL (used constantly).
-
-No drivers are needed on macOS or Linux. The ESP32-S3 has native USB and
-enumerates as a standard CDC serial device.
-
-**Windows:** usually driverless too. If the board shows as an unknown
-device, install the [CP210x
-driver](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
-— some XIAO batches use it.
-
-**Prefer a GUI?** [Thonny](https://thonny.org) can do all of this
-(*Tools → Options → Interpreter → MicroPython (ESP32) → Install or update
-firmware*). The commands below are the same operations.
+> **One rule if you use both:** only one program can hold the serial
+> port. If Thonny is connected, `mpremote` and `install.py` cannot talk
+> to the board, and vice versa. In Thonny, **Stop/Restart** does not
+> release it — use **Run → Disconnect**, or just close Thonny.
 
 ---
 
-## 1. Find the port
+## The Thonny way
 
-Plug the board in.
+### 1. Install Thonny
 
-**macOS**
-```bash
-ls /dev/cu.usbmodem*
-# /dev/cu.usbmodem101
+Download from **[thonny.org](https://thonny.org)** and install it.
+Windows, macOS and Linux all have a normal installer. Thonny bundles
+its own Python, so nothing else is needed.
+
+**Use Thonny 4.0 or newer** — it can install MicroPython by itself.
+Check under **Help → About Thonny**.
+
+### 2. Plug the board in
+
+Connect the XIAO to your computer with a **USB-C data cable**.
+
+> If nothing appears in later steps, suspect the cable first. Many
+> USB-C cables sold with phones and power banks are **charge-only** —
+> they carry power but no data, and the board looks dead through one.
+> This is the single most common problem on this page.
+
+### 3. Put the board in bootloader mode
+
+Only needed for this first firmware install, not for uploading files
+later.
+
+On the XIAO there are two tiny buttons beside the USB socket, marked
+**B** (boot) and **R** (reset):
+
+1. Press and **hold B**
+2. While holding it, **press and release R**
+3. **Release B**
+
+The board is now waiting to be flashed. Nothing visible happens — that
+is normal.
+
+### 4. Install MicroPython
+
+In Thonny:
+
+1. **Tools → Options… → Interpreter**
+2. Set the interpreter to **MicroPython (ESP32)**
+3. Click **Install or update MicroPython (esptool)** at the bottom of
+   the dialog
+4. In the window that opens:
+
+   | Field | What to choose |
+   |---|---|
+   | **Target port** | the one that appeared in bootloader mode — often labelled *USB JTAG/serial debug unit* or *CP210x*. If you see several, unplug the board, reopen the list, plug it back in, and take the new one. |
+   | **MicroPython family** | `ESP32-S3` |
+   | **variant** | `Espressif • ESP32-S3` (the generic one — correct for the XIAO) |
+   | **version** | the newest offered |
+
+5. Click **Install** and wait. It erases, writes and verifies — a
+   minute or two. Do not unplug it.
+6. Close both dialogs, then **press R** on the board once.
+
+Thonny's Shell pane at the bottom should now show something like:
+
+```
+MicroPython v1.27.0 on 2026-07-15; Generic ESP32S3 module with ESP32S3
+>>>
 ```
 
-**Linux**
+**That prompt is the whole test.** If it is there, MicroPython is
+installed and the hard part is over.
+
+> Nothing in the Shell? Click **Stop/Restart** (the red button), or
+> press **R** on the board again. If the port vanished from Thonny's
+> bottom-right corner, pick it again there.
+
+### 5. Get the lamp's files ready
+
+The repo's layout is not the board's layout, so let a script arrange
+them rather than picking and renaming files by hand:
+
 ```bash
-ls /dev/ttyACM*
-# /dev/ttyACM0
+python3 tools/prepare_upload.py
 ```
 
-**Windows** — Device Manager → Ports (COM & LPT) → something like `COM7`.
+This creates `upload/lamp1/` and `upload/lamp2/` — each one is exactly
+what that lamp's filesystem should contain, with the right config file
+already renamed to `config.py`.
 
-If nothing appears at all, go straight to [When it won't
-cooperate](#when-it-wont-cooperate).
+> It will tell you to run `python3 tools/apply_env.py` first if you
+> have not set up your TTN keys yet — that is
+> [SETUP.md step 5](SETUP.md#5-configure-and-load).
 
-> **Linux permissions.** If you get `Permission denied`, add yourself to
-> the serial group rather than reaching for `sudo`:
-> ```bash
-> sudo usermod -a -G dialout $USER   # Arch/Fedora: group is 'uucp'
-> ```
-> Then **log out and back in** — it doesn't take effect in the current
-> shell.
+**The two folders are not interchangeable.** `upload/lamp1/` goes on
+lamp 1 and `upload/lamp2/` on lamp 2. Putting the same one on both
+gives you two lamps sharing a LoRaWAN session and a lamp id: they will
+fight over the session, ignore each other's messages, and look for all
+the world like a broken radio.
 
-Every command below uses `/dev/ttyACM0`. Substitute your own.
+### 6. Upload the files
+
+Still in Thonny:
+
+1. **View → Files**. The left side now has two panes: your computer on
+   top, **MicroPython device** underneath.
+2. In the top pane, navigate into `upload/lamp1`.
+3. Select **everything** inside it — click one item, then **Ctrl-A**
+   (**Cmd-A** on a Mac). That is `main.py`, `radio_check.py` and the
+   `lamp` folder.
+4. **Right-click → Upload to /**
+
+Thonny copies the folders and their contents for you. It takes a few
+seconds — around 20 files.
+
+When it finishes, the device pane should show:
+
+```
+lamp
+config.py
+main.py
+radio_check.py
+```
+
+### 7. First light
+
+Press **R** on the board, and watch the Shell:
+
+```
+[boot] friend-lights-open 2026-07-27.1 — lamp 1
+[sx1262] found on the B2B kit pinout — NSS 41, RST 42, BUSY 40, DIO1 39
+[lorawan] radio up, listening on 869.525 MHz SF9, fcnt 0
+[portal] up — join WiFi 'deLENIghted-1'
+```
+
+The strip breathes warm white through startup, then settles.
+
+Now repeat steps 5–7 for the second board, using **`upload/lamp2`**.
 
 ---
 
-## 2. Enter bootloader mode
+## Re-flashing a lamp that already works
 
-The XIAO ESP32S3 has two tiny buttons: **B** (BOOT) and **R** (RESET).
+Uploading to a board that is *already running the firmware* has one
+trap: the lamp arms an **8-second hardware watchdog**, and on the ESP32
+a watchdog cannot be switched off — only given a longer deadline. Left
+alone, it reboots the board partway through your upload, and a
+half-copied firmware on a LoRa-only lamp is the one way to genuinely
+brick one.
 
-1. Hold **B**
-2. Tap **R**
-3. Release **B**
+So before uploading to a working lamp, click into Thonny's **Shell**
+and press **Ctrl-C** to stop the program, then paste:
 
-The board is now in download mode. It will sit there quietly — no LED, no
-sign of life. That's correct.
-
-The port often **changes** when it enters bootloader mode (a new
-`usbmodem`/`ttyACM` number). Re-check before flashing:
-
-```bash
-ls /dev/ttyACM*
+```python
+from machine import WDT
+WDT(timeout=600000)
 ```
+
+That buys ten minutes, which is ample. Then upload as usual and press
+**R** when you are done — the reset re-arms the normal 8-second
+watchdog.
+
+`tools/install.py` and `tools/deploy.sh` do this for you automatically;
+it is only the by-hand path that needs the reminder.
+
+> Fresh board, straight after installing MicroPython? Skip all this —
+> there is no watchdog running yet.
 
 ---
 
-## 3. Erase, then write
+## The command line way
 
-Erasing first is not optional in practice — leftover data from Arduino or
-a factory Meshtastic image causes MicroPython to boot into confusing
-half-states.
-
-```bash
-esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
-```
-
-Download the **ESP32_GENERIC_S3** `.bin` from
-[micropython.org/download/ESP32_GENERIC_S3](https://micropython.org/download/ESP32_GENERIC_S3/)
-— take the latest stable release, not a nightly.
+One command does everything above, including choosing the firmware
+image and walking you through bootloader mode:
 
 ```bash
-esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-           write_flash -z 0 ESP32_GENERIC_S3-20260602-v1.26.0.bin
+python3 tools/install.py
 ```
 
-Note `-z 0` — the ESP32-S3 image is written at offset **0**, not `0x1000`
-like the older ESP32. Using the wrong offset produces a board that
-enumerates but never boots.
+It is **rerunnable** — it looks at what is already done and does the
+next thing — so a second board, a half-finished install, and a firmware
+update are all the same command. Full detail:
+[SETUP.md](SETUP.md).
 
-If it fails partway, drop the speed: `--baud 460800`, or `115200`.
-
-Then **tap R** to leave bootloader mode.
-
----
-
-## 4. Check it took
-
-```bash
-mpremote connect /dev/ttyACM0 exec "import sys; print(sys.implementation)"
-```
-
-Expect something like:
-
-```
-(name='micropython', version=(1, 26, 0), _machine='Generic ESP32S3 module with ESP32S3', ...)
-```
-
-Confirm the flash and PSRAM are visible:
-
-```bash
-mpremote connect /dev/ttyACM0 exec "import esp; print(esp.flash_size())"
-```
-
-~8388608 (8 MB) on a standard XIAO ESP32S3.
-
----
-
-## 5. Load the lamp firmware
-
-From the repo root, once `.env` is filled in and
-`python3 tools/apply_env.py` has been run (see
-[SETUP.md step 5](SETUP.md#5-configure-and-load)):
+To update the code on a board that is already set up:
 
 ```bash
 ./tools/deploy.sh --lamp 1 /dev/ttyACM0
 ```
 
-That runs the test suite first and refuses to deploy if anything fails.
+That runs every test first and refuses to copy anything if one fails,
+which matters here: a LoRa-only lamp has no over-the-air recovery, so a
+boot loop means USB, or the post.
 
-By hand, if you prefer:
-
-```bash
-mpremote connect /dev/ttyACM0 mkdir :lamp
-mpremote connect /dev/ttyACM0 mkdir :lamp/net
-mpremote connect /dev/ttyACM0 mkdir :lamp/www
-mpremote connect /dev/ttyACM0 cp firmware/main.py :
-mpremote connect /dev/ttyACM0 cp firmware/config.lamp1.py :config.py
-mpremote connect /dev/ttyACM0 cp firmware/lamp/*.py :lamp/
-mpremote connect /dev/ttyACM0 cp firmware/lamp/net/*.py :lamp/net/
-mpremote connect /dev/ttyACM0 cp firmware/lamp/www/index.html :lamp/www/
-```
-
-Check what landed:
+<details>
+<summary>Doing it manually with esptool and mpremote</summary>
 
 ```bash
-mpremote connect /dev/ttyACM0 ls
-mpremote connect /dev/ttyACM0 ls :lamp
+pip install esptool mpremote
 ```
+
+Enter bootloader mode (hold **B**, tap **R**, release **B** — the port
+number often changes when you do this, so re-check it), then:
+
+```bash
+esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
+esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
+           write_flash -z 0 ESP32_GENERIC_S3-*.bin
+```
+
+Image from
+[micropython.org](https://micropython.org/download/ESP32_GENERIC_S3/).
+Note **`-z 0`** — the S3 image goes at offset `0`, not `0x1000` like
+the older ESP32. Tap **R**, then check:
+
+```bash
+mpremote connect /dev/ttyACM0 exec "import sys; print(sys.implementation)"
+```
+
+</details>
 
 ---
 
-## 6. Watch it boot
+## The radio
+
+**Neither radio module gets flashed.** The Wio-SX1262 has no processor
+in it — the LoRaWAN stack runs on the XIAO with everything else. (A
+Wio-E5 has one, but arrives with its AT firmware already on it.)
+
+Once the firmware is on, you can check the radio at any time. In
+Thonny, open `radio_check.py` from the device pane and press **F5**;
+from a terminal:
 
 ```bash
-mpremote connect /dev/ttyACM0 repl
+mpremote connect /dev/ttyACM0 run tools/radio_check.py
 ```
 
-Tap **R**. You want:
+⚠️ **It transmits — screw the antenna on first.** Transmitting into an
+open connector can damage the radio's power amplifier.
 
-```
-[boot] friend-lights-open 2026-07-27.1 — lamp 1 
-[lorawan] joining...
-[lorawan] joined
-```
-
-`Ctrl-]` exits the REPL. `Ctrl-C` interrupts the running program — useful
-when you need to stop the main loop to poke at something.
-
----
-
-## 7. The radio
-
-**Neither module gets flashed.** The Wio-SX1262 has no processor in it —
-the LoRaWAN stack runs on the XIAO with everything else. The Wio-E5 has
-one, but arrives with AT firmware already on it.
-
-### Wio-SX1262
-
-Check it before building anything on top of it:
-
-```bash
-mpremote connect /dev/ttyACM0 cp tools/radio_check.py :
-mpremote connect /dev/ttyACM0 run radio_check.py
-```
-
-⚠️ It transmits — **screw the antenna on first.** Transmitting into an
-open connector can damage the PA.
-
-It probes both ways the module can be attached, keeps whichever answers,
-and then works upward: SPI, the TCXO, a real LoRaWAN frame, and finally
+It probes both ways the module can attach, keeps whichever answers, and
+then works upward: SPI, the TCXO, a real LoRaWAN frame, and finally
 listening for a downlink. It stops at the first thing that is wrong, so
 you learn *which* thing.
 
@@ -221,113 +262,76 @@ If neither pinout answers, it is the connector rather than a setting —
 no value in `config.py` can make both fail. Press the two boards
 together until they click.
 
-If everything passes but nothing shows up in TTN's Live data, the radio
+If everything passes but nothing appears in TTN's Live data, the radio
 is fine and there is no gateway in range. That is coverage, not
-hardware, and no amount of poking at the board will change it.
-
-### Wio-E5
-
-Worth confirming it's alive and at the expected baud rate before blaming
-anything else. With the module wired up and MicroPython running:
-
-```bash
-mpremote connect /dev/ttyACM0 repl
-```
-
-```python
-from machine import UART, Pin
-u = UART(1, baudrate=9600, tx=Pin(43), rx=Pin(44))
-u.write("AT\r\n");        # expect  +AT: OK
-import time; time.sleep(1); print(u.read())
-
-u.write("AT+VER\r\n")     # firmware version
-time.sleep(1); print(u.read())
-```
-
-`None` back means the module isn't talking. In order of likelihood:
-
-1. **TX/RX not crossed.** XIAO TX → E5 **RX**, XIAO RX → E5 **TX**.
-2. **Wrong baud.** 9600 is the factory default, but some modules ship at
-   115200. Try both.
-3. **Power.** The E5 wants a solid 3V3. Transmit bursts brown out a weak
-   supply.
+hardware.
 
 ---
 
 ## When it won't cooperate
 
-### No serial port appears at all
+### No port appears at all
 
-**The cable.** This is the single most common cause. Many USB-C cables
-sold with phones and power banks are **charge-only** — no data lines.
-Swap it for one you know carries data. It costs nothing to rule out and
-is right more often than anything else on this list.
+**The cable.** Far and away the most common cause — many USB-C cables
+are charge-only. Swap it for one you know carries data before
+suspecting anything else.
 
-**Not in bootloader mode.** Hold **B**, tap **R**, release **B**. If the
-board has a firmware image that crashes instantly, it may never enumerate
-long enough to be seen except in bootloader mode.
+Then: try a different USB socket, and avoid hubs for the first install.
 
-**A USB hub.** Try a port directly on the machine.
+### Thonny says the port is busy
 
-### `A fatal error occurred: Failed to connect to ESP32-S3`
-
-Re-do the BOOT/RESET dance, then re-check the port number — it changes
-when entering bootloader mode. Try `--baud 115200`.
-
-### Flashes fine, but nothing on the REPL
-
-Tap **R** to leave bootloader mode — a freshly flashed board is still
-sitting in it.
-
-Also check you used `-z 0` and not `0x1000`.
-
-### Boot loop, or garbage on the serial output
-
-Interrupt before `main.py` runs:
+Something else is holding it — another Thonny window, a serial monitor,
+`mpremote`, or `install.py`. Close them. On Linux, if you get a
+permission error, add yourself to the `dialout` group and log out and
+back in:
 
 ```bash
-mpremote connect /dev/ttyACM0
-# then hit Ctrl-C repeatedly while tapping R
+sudo usermod -aG dialout $USER
 ```
 
-Once you have a `>>>` prompt, remove the offending file:
+### The Shell shows nothing but a blinking cursor
 
-```python
-import os; os.remove("main.py")
-```
+Press **Ctrl-C** to interrupt whatever is running, then **Ctrl-D** for a
+soft reboot. If the lamp firmware is running, Ctrl-C stops it — see
+[Re-flashing a lamp that already works](#re-flashing-a-lamp-that-already-works)
+about the watchdog before you upload anything.
 
-If you can't interrupt it at all, `erase_flash` and start from step 3.
-Nothing on the board is precious except `config.py`, and that's a copy of
-what's on your machine.
+### "Upload to /" is greyed out, or there is no device pane
 
-> **This is why `tools/deploy.sh` runs the tests first.** A LoRa-only lamp
-> has **no over-the-air recovery** — ten bytes a message is not a firmware
-> channel. On the original project a bad push could be fixed remotely;
-> here a boot loop means USB, and if the lamp is at a friend's house, the
-> post.
+Thonny is not connected to the board. Check the **bottom-right corner**
+— it names the current interpreter and port. Set it to *MicroPython
+(ESP32)* and pick the port.
 
-### `OSError: [Errno 2] ENOENT` on boot
+### It boot-loops after uploading
 
-A file didn't copy. `mpremote ls :lamp` and compare against
-[Layout](../README.md#layout).
+Read the Shell — the firmware prints the exception before it restarts.
+The usual cause is a missing file, so open the device pane and compare
+against `upload/lamp1/`; everything there should be on the board, in
+the same folders. Re-uploading the lot is harmless.
 
 ### It works, then stops responding after a few minutes
 
 Almost always power. Either radio draws a current spike when it
 transmits — an SX1262 at 14 dBm pulls around 45 mA on top of everything
-else — and if it shares a weak 3V3 rail with an LED strip the brownout
-takes the whole board down. Power the strip from 5 V directly, not
+else — and if it shares a weak 3V3 rail with an LED strip, the brownout
+takes the whole board down. Power the strip from **5 V directly**, not
 through the XIAO.
 
----
+### Starting over
 
-## Starting over
+Erase the board completely and begin at step 3. In Thonny the installer
+dialog erases before writing, so simply reinstalling MicroPython is
+enough. From a terminal:
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
 ```
 
-Wipes everything including `config.py`. Go back to step 3, then
-re-deploy — your keys are safe in `.env` on your laptop. There is no
-state on the board worth preserving: the lamp's counters come back from
-its peer at the next heartbeat.
+Nothing on the board is precious — `config.py` is regenerated from your
+`.env`, and the lamp's colour state is restored from its friend on the
+next message.
+
+---
+
+Stuck on something not listed here? →
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md)

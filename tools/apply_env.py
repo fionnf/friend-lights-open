@@ -14,9 +14,10 @@ It refuses to write anything if the values would produce a broken pair.
 Three of the ways to get six values wrong give you a lamp that joins the
 network perfectly and then does nothing, with no error anywhere:
 
-  * both lamps sharing a DevEUI     -> they fight over one session
-  * lamps with different JoinEUIs   -> one never joins at all
-  * both lamps sharing a LAMP_ID    -> they join, then ignore each other
+  * both lamps sharing a DevAddr    -> they fight over one session
+    (or a DevEUI, on the E5's OTAA path)
+  * both lamps sharing a session key -> same, less obviously
+  * both lamps sharing a LAMP_ID    -> they connect, then ignore each other
                                        forever, because the CRDT drops a
                                        message bearing your own id as an
                                        echo of yourself
@@ -53,23 +54,23 @@ TEMPLATE = '''# ============================================================
 # It lands on the board as config.py.
 
 LAMP_ID   = {n}
-LAMP_NAME = "{name}"
+LAMP_NAME = {name!r}
 
 # ── LoRaWAN (The Things Network) ────────────────────────────
 LORA_ENABLED = True
-LORA_RADIO   = "{radio}"             # SX1262 (ABP) or E5 (AT + OTAA)
+LORA_RADIO   = {radio!r}             # SX1262 (ABP) or E5 (AT + OTAA)
 
 # ABP session, used when LORA_RADIO is "SX1262"
-LORA_DEV_ADDR = "{dev_addr}"
-LORA_NWK_SKEY = "{nwk_skey}"
-LORA_APP_SKEY = "{app_skey}"
+LORA_DEV_ADDR = {dev_addr!r}
+LORA_NWK_SKEY = {nwk_skey!r}
+LORA_APP_SKEY = {app_skey!r}
 LORA_SF       = 9                    # must match RX2 on your plan
 LORA_TX_POWER = 14                   # dBm, EU868 ceiling
 
 # OTAA, used when LORA_RADIO is "E5"
-LORA_DEV_EUI = "{dev_eui}"          # unique to this lamp
-LORA_APP_EUI = "{join_eui}"          # SAME on both lamps
-LORA_APP_KEY = "{app_key}"
+LORA_DEV_EUI = {dev_eui!r}          # unique to this lamp
+LORA_APP_EUI = {join_eui!r}          # SAME on both lamps
+LORA_APP_KEY = {app_key!r}
 
 # SPI to the Wio-SX1262 — the board-to-board kit pins, tried first. If
 # the module is on the through-hole header instead, the firmware finds
@@ -82,7 +83,7 @@ SX_NSS_PIN   = 41
 SX_RESET_PIN = 42
 SX_BUSY_PIN  = 40
 SX_DIO1_PIN  = 39
-LORA_REGION  = "{region}"
+LORA_REGION  = {region!r}
 LORA_CLASS   = "C"                   # mains-powered: listens continuously
 LORA_PORT    = 8
 
@@ -92,12 +93,18 @@ LORA_TX_PIN  = 43
 LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
-# Ten downlinks a day is your FRIEND's allowance, and every uplink the
-# bridge forwards spends one of theirs. Spent as a token bucket: up to
-# LORA_BURST touches go out immediately, refilling one per interval —
-# so touches arrive in seconds until a day gets unusually busy.
-LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
-LORA_BURST           = 6
+# Messages a day, spent as a token bucket: the first LORA_BURST touches
+# of a quiet day go out immediately, then it refills steadily. 0 means
+# no daily budget — the EU868 duty cycle still caps it at one per 30 s,
+# and that floor is law rather than etiquette so the firmware always
+# keeps it. Every message you send is a downlink on your friend's lamp,
+# and downlinks are the direction that costs the shared gateway.
+LORA_DAILY_BUDGET = 48
+LORA_BURST        = 6
+
+# Which code drives the radio: "upstream" is micropython-lib's SX1262
+# driver (the default), "native" this project's register-level one.
+LORA_DRIVER  = "upstream"
 
 # ── Home WiFi (optional) ────────────────────────────────────
 # Can also be entered from the lamp's own page later, with no cable.
@@ -108,13 +115,13 @@ MQTT_BROKER   = ""
 MQTT_PORT     = 1883
 MQTT_USER     = ""
 MQTT_PASSWORD = ""
-MQTT_PREFIX   = "friendlights_{slug}"
+MQTT_PREFIX   = {mqtt_prefix!r}
 
 # ── LED strip ───────────────────────────────────────────────
 LED_PIN        = 2                   # data line, via the 330 ohm resistor
 NUM_LEDS       = {num_leds}
 LED_BRIGHTNESS = 0.6
-LED_ORDER      = "{led_order}"              # "GRB" for WS2812 (no white)
+LED_ORDER      = {led_order!r}              # "GRB" for WS2812 (no white)
 REVERSE_LEDS   = False
 
 # ── Colour zones ────────────────────────────────────────────
@@ -124,7 +131,7 @@ REVERSE_LEDS   = False
 NUM_GROUPS     = {num_groups}
 GROUP_MIN_LEDS = 1
 GROUP_MAX_LEDS = {group_max}
-GROUP_SPREAD   = {spread}
+GROUP_SPREAD   = {spread:.3f}
 
 # ── Touch ───────────────────────────────────────────────────
 TOUCH_PINS      = [4]                # [] for a lamp with no pad
@@ -143,8 +150,8 @@ BREATHE_DEPTH   = 0.04
 # otherwise browse to http://192.168.4.1
 PORTAL_ENABLED   = True
 PORTAL_ALWAYS_ON = True
-PORTAL_SSID      = "{ssid}"
-PORTAL_PASSWORD  = "{portal_password}"
+PORTAL_SSID      = {ssid!r}
+PORTAL_PASSWORD  = {portal_password!r}
 
 WATCHDOG_ENABLED = True
 '''
@@ -154,7 +161,7 @@ def main():
     if not os.path.exists(ENV):
         print("\n  No .env yet:\n")
         print("      cp .env.example .env\n")
-        print("  Then fill in the DevEUI and AppKey for each lamp.\n")
+        print("  Then fill in each lamp's three session values.\n")
         return 1
 
     env = load_env(ENV)
@@ -257,6 +264,12 @@ def main():
     wifi_ssid = env.get("WIFI_SSID", "").strip()
     wifi_pass = env.get("WIFI_PASSWORD", "").strip()
 
+    try:
+        spread = float(env.get("GROUP_SPREAD", "") or 0.35)
+    except ValueError:
+        spread = 0.35
+    spread = max(0.0, min(1.0, spread))
+
     for lamp in lamps:
         slug = re.sub(r"[^a-z0-9]+", "-", lamp["name"].lower()).strip("-")
         ssid = "deLENIghted-%d" % lamp["n"]
@@ -265,24 +278,45 @@ def main():
         if len(ssid) > 32:
             ssid = ssid[:32]
         path = os.path.join(ROOT, "firmware", "config.lamp%d.py" % lamp["n"])
+        text = TEMPLATE.format(
+            n=lamp["n"], name=lamp["name"],
+            mqtt_prefix="friendlights_" + (slug or "lamp%d" % lamp["n"]),
+            dev_eui=lamp["dev_eui"].upper(),
+            join_eui=join_eui.upper(),
+            app_key=lamp["app_key"].upper(),
+            region=env.get("LORA_REGION", "EU868") or "EU868",
+            wifi_enabled=bool(wifi_ssid),
+            wifi_networks=repr([[wifi_ssid, wifi_pass]]) if wifi_ssid
+            else "[]",
+            radio=radio,
+            dev_addr=lamp["dev_addr"].upper(),
+            nwk_skey=lamp["nwk_skey"].upper(),
+            app_skey=lamp["app_skey"].upper(),
+            ssid=ssid, portal_password=ssid_pw,
+            num_leds=num_leds, led_order=led_order,
+            num_groups=num_groups, group_max=max(1, num_leds // 2),
+            spread=spread)
+
+        # Never write Python that will not parse. Every value above is
+        # interpolated with repr() so a quote in a name or password
+        # cannot break out, but this is the check that makes that a
+        # guarantee rather than a claim: main.py does `import config` at
+        # module level, OUTSIDE its crash guard, so a SyntaxError here
+        # is not a lamp that misbehaves — it is a lamp that never runs,
+        # sitting dark at a REPL you can only reach over USB.
+        try:
+            compile(text, path, "exec")
+        except SyntaxError as e:
+            print("\n  Refusing to write config.lamp%d.py — the values in"
+                  % lamp["n"])
+            print("  .env do not produce valid Python:\n")
+            print("      line %s: %s" % (e.lineno, e.msg))
+            print("\n  This is a bug in apply_env.py, not in your .env.")
+            print("  Please report it, and paste the line above.\n")
+            return 1
+
         with open(path, "w") as f:
-            f.write(TEMPLATE.format(
-                n=lamp["n"], name=lamp["name"], slug=slug or ("lamp%d" % lamp["n"]),
-                dev_eui=lamp["dev_eui"].upper(),
-                join_eui=join_eui.upper(),
-                app_key=lamp["app_key"].upper(),
-                region=env.get("LORA_REGION", "EU868") or "EU868",
-                wifi_enabled=bool(wifi_ssid),
-                wifi_networks=repr([[wifi_ssid, wifi_pass]]) if wifi_ssid
-                else "[]",
-                radio=radio,
-                dev_addr=lamp["dev_addr"].upper(),
-                nwk_skey=lamp["nwk_skey"].upper(),
-                app_skey=lamp["app_skey"].upper(),
-                ssid=ssid, portal_password=ssid_pw,
-                num_leds=num_leds, led_order=led_order,
-                num_groups=num_groups, group_max=max(1, num_leds // 2),
-                spread=env.get("GROUP_SPREAD", "0.35") or "0.35"))
+            f.write(text)
         print("  wrote firmware/config.lamp%d.py   %s" % (lamp["n"], ssid))
 
     print("\n  Both configs written from .env. Neither is tracked by git.")

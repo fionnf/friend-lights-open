@@ -8,7 +8,7 @@
  *
  * It is stateless, so it runs on Cloudflare's free tier forever: TTN
  * POSTs an uplink here, and this POSTs a downlink back to TTN for every
- * other lamp in the group. About forty lines, no server, no bill.
+ * other lamp in the group. About one small file, no server, no bill.
  *
  * ── Why "replace" and not "push" ────────────────────────────────────
  * TTN queues downlinks for a device. If a lamp is unreachable while five

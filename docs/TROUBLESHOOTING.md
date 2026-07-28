@@ -29,7 +29,7 @@ Where to look is covered in
 | Network appears but the password is rejected | `PORTAL_PASSWORD` under 8 characters | The ESP32 silently ignores short passwords and comes up **open** — the boot log says which mode it used |
 | Joined, but no page opened | Phone suppressed the captive-portal prompt | Browse to **http://192.168.4.1** |
 | Page loads, buttons do nothing | Lamp busy bringing the radio up | Wait for `[lorawan] radio up`, then reload |
-| Colour changes feel far too slow | Working as intended | See [the README](../README.md#living-with-ten-messages-a-day) |
+| Colour arrives slower than expected | `ARRIVAL_FADE_MS`, or the daily budget is spent | Lower the fade; see [the README](../README.md#living-with-ten-messages-a-day) |
 
 ---
 

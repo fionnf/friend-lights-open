@@ -2,17 +2,17 @@
 #  engine.py  —  Turning agreed state into light
 # ============================================================
 # The CRDT in shared_state.py decides WHAT colour the lamps agree on.
-# This decides HOW it arrives, and the answer is: slowly.
+# This decides HOW it arrives, and the answer is: smoothly.
 #
 # A lamp that jumped the instant a message landed would still be correct.
 # It would also announce, several times a day, that a packet had been
 # received — which is not the thing anyone wants to be told. Fading over
-# a minute or two makes the network invisible, and turns a message into
+# a few seconds makes the network invisible, and turns a message into
 # something you notice rather than something you watch happen.
 #
 # It also happens to be what the transport requires. Ten downlinks a day
 # means colour arrives a handful of times a day no matter what this file
-# does; the slow fade means that reads as weather rather than as lag.
+# does; the fade means that reads as movement rather than as lag.
 
 import math
 import utime
@@ -188,7 +188,7 @@ class Engine:
             self.group_min_leds, self.group_max_leds)
 
     def _chase(self, dt):
-        """Move the displayed colour toward the agreed one, slowly.
+        """Move the displayed colour toward the agreed one, smoothly.
 
         Straight-line, not shortest-way-round: palette position is not a
         circle. 0.0 is warm white and 1.0 is fully saturated, so there is

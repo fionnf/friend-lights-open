@@ -28,10 +28,11 @@ FIRMWARE_VERSION = "2026-07-27.1"
 FRAME_MS         = 16
 STATE_FILE       = "state.json"
 STATE_FLUSH_MS   = 5 * 60 * 1000
-# Every uplink the bridge forwards becomes a DOWNLINK on the peer, and
-# the peer may only receive ten a day. So this is budgeted against the
-# friend's allowance, not our own airtime: 2 heartbeats a day, leaving 8
-# for actual changes. See docs/PROTOCOL.md.
+# Every uplink the bridge forwards becomes a DOWNLINK on the peer, so
+# this is budgeted against the friend's lamp rather than our own
+# airtime. Two a day is enough to repair a pair that missed everything;
+# the rest of the budget is left for actual changes. LORA_DAILY_BUDGET
+# sets that. See docs/PROTOCOL.md.
 HEARTBEAT_MS     = 12 * 60 * 60 * 1000
 
 wdt = None
@@ -184,6 +185,44 @@ def restore_state(shared):
         return True, _cfg("LED_BRIGHTNESS", 0.6)
 
 
+# ── How often this lamp may speak ────────────────────────────
+# EU868 allows a device 1% duty cycle per sub-band, and our three
+# uplink channels share one. A 10-byte frame at SF9 is ~0.25 s of
+# airtime, so 1% means a gap of ~25 s. This floor is LAW rather than
+# politeness, nothing else in the stack enforces it, and exceeding it
+# is the one setting here that could actually get you in trouble — so
+# it holds regardless of what the config asks for.
+DUTY_CYCLE_FLOOR_MS = 30_000
+
+_SENTINEL = object()
+
+
+def send_interval_ms(budget, explicit=None, floor=DUTY_CYCLE_FLOOR_MS):
+    """Milliseconds between sends, from a messages-per-day budget.
+
+    `budget` of 0 or None means "no daily budget" — which still leaves
+    the duty-cycle floor, because that one is not ours to waive.
+    `explicit` (LORA_MIN_INTERVAL_MS) wins if set, so a config written
+    before the budget existed keeps working.
+    """
+    if explicit:
+        return max(floor, int(explicit))
+    try:
+        budget = int(budget)
+    except (TypeError, ValueError):
+        budget = 0
+    if budget > 0:
+        return max(floor, 24 * 60 * 60 * 1000 // budget)
+    return floor
+
+
+def _lora_interval():
+    explicit = _cfg("LORA_MIN_INTERVAL_MS", _SENTINEL)
+    budget = _cfg("LORA_DAILY_BUDGET", 48)
+    return send_interval_ms(
+        budget, None if explicit is _SENTINEL else explicit)
+
+
 # ── Transports ───────────────────────────────────────────────
 
 def _find_sx1262():
@@ -260,8 +299,7 @@ def build_transports(tick=None):
                     port=_cfg("LORA_PORT", 8),
                     sf=_cfg("LORA_SF", 9),
                     tx_power=_cfg("LORA_TX_POWER", 14),
-                    min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
-                                         3 * 60 * 60 * 1000),
+                    min_interval_ms=_lora_interval(),
                     burst=_cfg("LORA_BURST", 6))
             else:
                 from machine import UART, Pin
@@ -277,8 +315,7 @@ def build_transports(tick=None):
                     region=_cfg("LORA_REGION", "EU868"),
                     lora_class=_cfg("LORA_CLASS", "C"),
                     port=_cfg("LORA_PORT", 8),
-                    min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
-                                         3 * 60 * 60 * 1000),
+                    min_interval_ms=_lora_interval(),
                     burst=_cfg("LORA_BURST", 6))
             lora.start(tick=tick)
             router.add(lora)
@@ -326,7 +363,7 @@ def _mqtt_factory():
             raise OSError("no known WiFi network")
 
     uid = ubinascii.hexlify(machine.unique_id()).decode()
-    client = MQTTClient("lamp%d_%s" % (config.LAMP_ID, uid),
+    client = MQTTClient("lamp%d_%s" % (_cfg("LAMP_ID", 1), uid),
                         _cfg("MQTT_BROKER", ""),
                         port=_cfg("MQTT_PORT", 1883),
                         user=_cfg("MQTT_USER", "") or None,
@@ -409,9 +446,10 @@ def main():
 
     pulser.stop()
 
-    # Local control and provisioning, raised on demand by a 5 s press.
-    # Never on by default: an always-up open access point is needless
-    # exposure and pointless RF noise.
+    # Local control and provisioning. Up from boot by default
+    # (PORTAL_ALWAYS_ON), because reaching the lamp from a phone must
+    # not depend on the radio working; a 5 s press toggles it off for
+    # anyone who would rather not run an access point continuously.
     restart_at = [None]
 
     def on_config(data):
@@ -451,7 +489,10 @@ def main():
     # One write per boot guarantees the file exists, so a lamp that loses
     # power before its first flush still comes back with its counters.
     save_state(shared, engine, force=True)
-    router.send(current_frame(), force=True)
+    # Not forced: a lamp stuck in a reboot loop would otherwise
+    # transmit on every restart forever, and this announcement is the
+    # least urgent send there is — the heartbeat covers it.
+    router.send(current_frame())
 
     while True:
         now = utime.ticks_ms()
@@ -519,11 +560,14 @@ def main():
                 dirty = False
 
         if utime.ticks_diff(now, next_heartbeat) >= 0:
-            # Costs one uplink an hour and means a lamp that missed
-            # everything still converges without anyone touching anything.
-            if router.ready():
-                router.send(current_frame())
-            next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
+            # Costs two uplinks a day and means a lamp that missed
+            # everything still converges without anyone touching
+            # anything. Only reschedule once it has actually GONE —
+            # a drained budget used to skip the heartbeat silently and
+            # not try again for another twelve hours, which is exactly
+            # the send that must not be dropped.
+            if router.ready() and router.send(current_frame()):
+                next_heartbeat = utime.ticks_add(now, HEARTBEAT_MS)
 
         # ── Housekeeping ──
         if utime.ticks_diff(now, next_flush) >= 0:

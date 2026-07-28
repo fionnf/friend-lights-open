@@ -141,10 +141,12 @@ register, read it back — and keeps whichever answers:
 
 A pinout is skipped rather than probed if it collides with something the
 lamp already uses, since probing means driving those pins and driving
-the LED data line writes garbage down the strip. With the default
-`LED_PIN = 2` that rules out the header pinout — so **move the LED to
-another pin if you have the standalone module**, and the firmware will
-find it.
+the LED data line writes garbage down the strip.
+
+The defaults collide with the header pinout twice over: `LED_PIN = 2`
+is its BUSY line and `TOUCH_PINS = [4]` is its NSS. So with the
+standalone module, **move both** — any free pins will do — and the
+firmware will find the radio by itself.
 
 `SX_*_PIN` in `config.py` is tried first, before either guess. It only
 matters for a board that is neither of the above.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy the firmware onto a XIAO ESP32S3.
-#   ./tools/deploy.sh [port]
+#   ./tools/deploy.sh --lamp N [port]     (or [port] for firmware/config.py)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

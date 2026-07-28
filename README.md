@@ -24,7 +24,7 @@ plus an LED strip. **~€35 a lamp, once. Nothing after that.**
 | | |
 |---|---|
 | **Tap** the pad | nudge the colour |
-| **Hold 1 s** | on / off |
+| **Hold ~1 s** | on / off |
 | **Hold 5 s** | toggle the control network |
 
 Each lamp runs its own WiFi network, always on, so you can control it
@@ -66,7 +66,7 @@ two devices with TTN, and pasting the bridge into Cloudflare.
 | 1 | Build the lamp | no — it clicks and solders nothing |
 | 2 | Flash MicroPython | **yes** |
 | 3 | Set up The Things Network | no — free account, a glossary comes first |
-| 4 | Deploy the bridge | no — 40 lines, pasted into Cloudflare |
+| 4 | Deploy the bridge | no — one file, pasted into Cloudflare |
 | 5 | Configure and load | **yes** |
 | 6 | First light | **yes** — it ends with a radio check |
 
@@ -110,7 +110,7 @@ artifact** neither of you fully controls, and you can see their influence
 in it. Both of you push; the light is where you ended up.
 
 And it arrives fast: on a normal day a touch reaches the other lamp in
-**seconds** — the radio path takes 5–10 s and the colour settles over a
+**seconds** — the radio path takes 2–10 s and the colour settles over a
 few more (`ARRIVAL_FADE_MS`). If you'd rather the light read as post
 than as a text, set the fade to 90 s and it drifts in like weather.
 
@@ -210,7 +210,7 @@ messages. The first few arrive as they happen; the rest travel together
 in the next one, and their lamp pulses to say so. Nothing is lost.
 
 **This is the product, not a limitation.** Want a mirror instead? Lower
-`ARRIVAL_FADE_MS` and `LORA_MIN_INTERVAL_MS` — and hit the ceiling by
+`ARRIVAL_FADE_MS` and `LORA_DAILY_BUDGET` — and hit the ceiling by
 mid-morning. Try `python3 tools/simulate.py --arrival-fade 5` first.
 
 ---

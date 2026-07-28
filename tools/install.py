@@ -47,8 +47,18 @@ def run(cmd, **kw):
 
 
 def mpremote(port, *args, **kw):
-    return run([sys.executable, "-m", "mpremote", "connect", port]
-               + list(args), **kw)
+    """Always `python -m mpremote`, never the bare script: a pip
+    --user install puts that script in a directory that is often not on
+    PATH, and the module form works either way."""
+    try:
+        return run([sys.executable, "-m", "mpremote", "connect", port]
+                   + list(args), **kw)
+    except subprocess.TimeoutExpired:
+        # A port that enumerates but never answers — wrong device, a
+        # wedged board, or something else holding it open. Reported as
+        # a failed command, which every caller already handles.
+        say("   (no answer from %s)" % port)
+        return subprocess.CompletedProcess(args, 1, "", "timed out")
 
 
 # ── Pure helpers (tested in tests/test_install.py) ───────────
@@ -103,7 +113,10 @@ def env_text(answers):
     lines = ["# Written by tools/install.py — edit freely, or rerun it.",
              "LORA_RADIO = SX1262", ""]
     for n in (1, 2):
-        lines.append("LAMP%d_NAME    = %s" % (n, answers.get("name%d" % n, "")))
+        # apply_env.py strips from the first '#', so a name containing
+        # one would silently lose its tail.
+        name = answers.get("name%d" % n, "").split("#")[0].strip()
+        lines.append("LAMP%d_NAME    = %s" % (n, name))
         for key in ("DEV_ADDR", "NWK_SKEY", "APP_SKEY"):
             lines.append("LAMP%d_%s = %s"
                          % (n, key, answers["%s%d" % (key.lower(), n)]))
@@ -219,15 +232,29 @@ def board_has_micropython(port):
     return r.returncode == 0 and "micropython" in (r.stdout or "")
 
 
+# A plain ESP32_GENERIC_S3 build, dated, stable. Deliberately strict:
+# "ESP32_GENERIC_S3_SPIRAM_OCT" also starts with ESP32_GENERIC_S3 and
+# will not boot on a XIAO, and "_" sorts AFTER "-", so a loose copy of
+# it in ~/Downloads used to win a naive newest-first pick.
+IMAGE_FILE = re.compile(
+    r"^ESP32_GENERIC_S3-(\d{8})-v[\d.]+\.bin$")
+
+
+def local_images(names):
+    """The usable images among `names`, newest first."""
+    dated = [(m.group(1), n) for n in names for m in [IMAGE_FILE.match(n)] if m]
+    return [n for _d, n in sorted(dated, reverse=True)]
+
+
 def find_or_fetch_image(ask):
     """A MicroPython .bin, from disk if one is lying around, else from
     micropython.org with permission."""
     for folder in (ROOT, os.getcwd(), os.path.expanduser("~/Downloads")):
-        found = sorted(
-            f for f in os.listdir(folder) if f.startswith("ESP32_GENERIC_S3")
-            and f.endswith(".bin")) if os.path.isdir(folder) else []
+        if not os.path.isdir(folder):
+            continue
+        found = local_images(os.listdir(folder))
         if found:
-            path = os.path.join(folder, found[-1])
+            path = os.path.join(folder, found[0])
             say("   using %s" % path)
             return path
     if ask("   download the latest MicroPython for the ESP32-S3? "
@@ -262,8 +289,12 @@ def flash_micropython(port, ask):
     say("   Put the board in bootloader mode:")
     say("     hold  B (BOOT), tap  R (RESET), release  B")
     ask("   then press Enter... ")
-    # The port number usually changes in bootloader mode.
-    port = find_port(ask) or port
+    # The port number usually changes in bootloader mode. If the user
+    # gives up here, stop — `or port` used to swallow the refusal and
+    # erase a board on the stale pre-bootloader port.
+    port = find_port(ask)
+    if not port:
+        return None
     if run([sys.executable, "-m", "esptool", "--chip", "esp32s3",
             "--port", port, "erase_flash"]).returncode != 0:
         return None
@@ -273,7 +304,9 @@ def flash_micropython(port, ask):
         return None
     say("")
     ask("   tap R (RESET), then press Enter... ")
-    port = find_port(ask) or port
+    port = find_port(ask)
+    if not port:
+        return None
     if not board_has_micropython(port):
         say("   the board did not come back speaking MicroPython —")
         say("   see docs/FLASHING.md for the failure modes")

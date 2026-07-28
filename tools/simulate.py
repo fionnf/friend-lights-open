@@ -111,8 +111,8 @@ def main():
                     help="fraction of frames the network eats (0-1)")
     ap.add_argument("--touches", type=int, default=14,
                     help="touches per lamp per day")
-    ap.add_argument("--arrival-fade", type=float, default=90,
-                    help="seconds for a colour to arrive (firmware default 90)")
+    ap.add_argument("--arrival-fade", type=float, default=6,
+                    help="seconds for a colour to arrive (firmware default 6)")
     ap.add_argument("--uplink-interval", type=float, default=180,
                     help="minutes between change-driven uplinks")
     ap.add_argument("--heartbeat-hours", type=float, default=12,

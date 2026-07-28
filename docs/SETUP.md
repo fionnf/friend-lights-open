@@ -38,7 +38,7 @@ will fix it.
 Neither wants a card:
 
 - **[The Things Network](https://console.cloud.thethings.network)** — the radio network
-- **[Cloudflare](https://dash.cloudflare.com)** — runs the 40-line bridge
+- **[Cloudflare](https://dash.cloudflare.com)** — runs the bridge
 
 ### Values you'll collect
 

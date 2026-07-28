@@ -5,11 +5,6 @@ while you wait for parts: the cloud half is where the fiddly
 configuration lives, and finding a wrong webhook now is much cheaper than
 debugging it beside a lamp that "just doesn't work".
 
-Everything except the radio can be proven with a laptop. Do this while
-you wait for parts — the cloud half is where the fiddly configuration
-lives, and finding a wrong webhook now is much cheaper than debugging it
-next to a lamp that "just doesn't work".
-
 ### The real test: simulate an uplink in TTN
 
 This is the one that matters, because it exercises your **actual**
@@ -113,21 +108,20 @@ solder one.
 
 This is also the cheapest way to decide `ARRIVAL_FADE_MS`. It is the
 single number that determines whether the lamp reads as post or as a
-notification, and it is far easier to judge here than beside real
-hardware that speaks every three hours.
+notification, and it is far easier to judge here than beside a real one.
 
 ### Watch two lamps for a week
 
 ```bash
 python3 tools/simulate.py                       # a day
 python3 tools/simulate.py --hours 168 --loss 0.6
-python3 tools/simulate.py --arrival-fade 5      # what a mirror feels like
+python3 tools/simulate.py --arrival-fade 90     # what 'like post' feels like
 ```
 
 Runs the real colour engine and CRDT against a network with TTN's
 constraints, drawing both strips in your terminal. This is how to decide
 whether the lamp should feel like post or like a notification, which is
-much easier here than by waiting three hours next to a real one.
+much easier here than beside a real one.
 
 ---
 

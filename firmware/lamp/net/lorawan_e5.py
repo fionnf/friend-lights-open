@@ -26,7 +26,8 @@
 # and them, having cost us the transmission anyway.
 #
 # So the send budget is ten a day, split: two heartbeats (main.py) and up
-# to eight change-driven sends, hence three hours between them.
+# to eight change-driven sends at the default budget, spent as a token
+# bucket rather than a fixed gap — see transport.py.
 #
 # This is not a limitation to be worked around. A lamp that changes a
 # handful of times a day is the product.
@@ -60,6 +61,12 @@ def _unhex(text):
 class LoRaWANE5(Transport):
 
     name = "lorawan"
+    # EU868 gives a device 1% duty cycle per sub-band, and our
+    # three uplink channels share one. At ~0.25 s of airtime a
+    # frame that is a 25 s gap; 30 s keeps a margin. Nothing else
+    # in the stack enforces this, and it is the one limit here
+    # that is law rather than etiquette.
+    min_gap_ms = 30_000
 
     def __init__(self, uart, dev_eui, app_eui, app_key,
                  region="EU868", lora_class="C", port=8,

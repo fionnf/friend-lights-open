@@ -47,21 +47,36 @@ class Transport:
     # How many sends may happen back-to-back before the average gap
     # kicks in. See the throttling section below.
     burst = 6
+    # The hard floor between ANY two transmissions, bucket or no bucket.
+    # On EU868 this is the duty cycle, which is law rather than policy —
+    # so unlike the bucket it is not waivable, not even by `force`.
+    min_gap_ms = 0
 
     # Backoff bounds for automatic reconnection.
     RETRY_MIN_MS = 60_000
     RETRY_MAX_MS = 30 * 60 * 1000
 
     def __init__(self):
-        # Two tokens at boot, not a full bucket: the boot announcement
-        # spends one, leaving one so the first touch after power-on
-        # still goes out immediately — while a lamp on flaky power
-        # can't mint a full burst per brownout.
-        self._tokens = 2.0
+        # Credit is carried in whole milliseconds, not fractional
+        # tokens. MicroPython on the ESP32-S3 has SINGLE-precision
+        # floats, and this is topped up from the render loop about a
+        # thousand times a second: at a three-hour refill each call adds
+        # ~1e-7 of a token, which is below the float32 ulp above 2.0, so
+        # `tokens + tiny` silently rounded back to `tokens` and the
+        # bucket could never fill past two. Integers cannot round away.
+        self._credit_ms = None          # primed on first use
         self._last_refill = utime.ticks_ms()
+        self._last_send = None
         self._retry_at = None
         self._retry_backoff = 0
         self.connected = False
+
+    def _boot_credit(self):
+        """Two sends at boot, not a full bucket: one for the boot
+        announcement, one so the first touch after power-on is still
+        immediate — while a lamp on flaky power cannot mint a whole
+        burst per brownout."""
+        return 2 * self.min_interval_ms
 
     # ── Lifecycle ───────────────────────────────────────────
 
@@ -94,34 +109,58 @@ class Transport:
     # the burst is spent, and the steady-state daily total is identical.
 
     def _refill(self, now):
+        if self.min_interval_ms <= 0:
+            return
+        if self._credit_ms is None:
+            self._credit_ms = self._boot_credit()
         elapsed = utime.ticks_diff(now, self._last_refill)
-        if elapsed > 0:
-            self._tokens = min(float(self.burst),
-                               self._tokens + elapsed / self.min_interval_ms)
+        if elapsed < 0:
+            # ticks_ms() wraps, and ticks_diff is only meaningful across
+            # about six days. A link down longer than that comes back
+            # with a negative elapsed — resynchronise rather than let
+            # the bucket sit frozen until the counter wanders back.
             self._last_refill = now
+            return
+        if elapsed > 0:
+            self._credit_ms = min(self.burst * self.min_interval_ms,
+                                  self._credit_ms + elapsed)
+            self._last_refill = now
+
+    def _gap_ok(self, now):
+        """The duty-cycle floor. Separate from the bucket because it
+        answers a different question: the bucket rations messages per
+        DAY, this one is the minimum spacing between any two of them."""
+        if self.min_gap_ms <= 0 or self._last_send is None:
+            return True
+        return utime.ticks_diff(now, self._last_send) >= self.min_gap_ms
 
     def ready_to_send(self, now=None):
         if not self.connected:
             return False
+        now = utime.ticks_ms() if now is None else now
+        if not self._gap_ok(now):
+            return False
         if self.min_interval_ms <= 0:
             return True
-        now = utime.ticks_ms() if now is None else now
         self._refill(now)
-        return self._tokens >= 1.0
+        return self._credit_ms >= self.min_interval_ms
 
     def send(self, payload, force=False):
         """Transmit if the budget allows. Returns True if it went out.
 
-        `force` bypasses the bucket but not the connection check — used
-        for things that must not wait, like a power-off. It still spends
-        a token when one is there: a forced send is a real downlink on
-        the friend's lamp, whatever the reason for forcing it.
+        `force` skips the daily budget — for something that must not
+        wait — but never the duty-cycle floor, which is not ours to
+        waive. It still spends budget when there is some: a forced send
+        is a real downlink on the friend's lamp either way.
         """
         if not self.connected:
             return False
+        now = utime.ticks_ms()
+        if not self._gap_ok(now):
+            return False
         if self.min_interval_ms > 0:
-            self._refill(utime.ticks_ms())
-            if not force and self._tokens < 1.0:
+            self._refill(now)
+            if not force and self._credit_ms < self.min_interval_ms:
                 return False
         try:
             self._send(payload)
@@ -129,8 +168,9 @@ class Transport:
             print("[%s] send failed: %s" % (self.name, e))
             self.connected = False
             return False
+        self._last_send = now
         if self.min_interval_ms > 0:
-            self._tokens = max(0.0, self._tokens - 1.0)
+            self._credit_ms = max(0, self._credit_ms - self.min_interval_ms)
         return True
 
 
@@ -209,6 +249,9 @@ class Router:
                 continue
             print("[net] retrying %s" % t.name)
             try:
+                # The bucket does not accrue while a link is down, so
+                # start the clock again rather than credit the outage.
+                t._last_refill = utime.ticks_ms()
                 t.start(tick=tick)
             except Exception as e:
                 print("[net] %s retry failed: %s" % (t.name, e))
@@ -225,7 +268,7 @@ class Router:
 
         rebuilds the frame on every pass of the render loop — Python
         evaluates the argument before it can be refused. With LoRaWAN
-        throttled to 15 minutes that is roughly a million discarded
+        sending throttled to minutes or hours that is a great many discarded
         allocations between two sends, and if no transport is connected
         at all, it never stops.
         """

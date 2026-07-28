@@ -84,7 +84,7 @@ def main():
                     help="2 simulates a friend touching theirs")
     ap.add_argument("--friend-every", type=float, default=20,
                     help="seconds between the friend's touches")
-    ap.add_argument("--arrival-fade", type=float, default=90,
+    ap.add_argument("--arrival-fade", type=float, default=6,
                     help="seconds for a colour to arrive")
     args = ap.parse_args()
 

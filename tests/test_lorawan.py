@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, "firmware", "lamp"))
 
 from _aes_fallback import encrypt_block
 from net import lorawan_crypto as lw
+import utime
 
 failures = []
 
@@ -235,8 +236,11 @@ check("it parks on RX2 immediately (Class C)",
 check("DevAddr is byte-reversed for the air",
       t.dev_addr == bytes(reversed(ADDR)), t.dev_addr)
 
+# The duty-cycle floor applies even to a forced send, so step the
+# clock between them — on hardware this is 30 s of real time.
 for i in range(5):
     t.send(b"0123456789", force=True)
+    utime.sleep_ms(t.min_gap_ms + 1)
 check("five frames went out", len(radio.sent) == 5, len(radio.sent))
 
 counters = [f[6] | (f[7] << 8) for f in radio.sent]
@@ -250,6 +254,7 @@ check("it returns to listening after transmitting",
 t2, radio2 = make()
 for i in range(3):
     t2.send(b"0123456789", force=True)
+    utime.sleep_ms(t2.min_gap_ms + 1)
 after = [f[6] | (f[7] << 8) for f in radio2.sent]
 check("a reboot never reuses a counter", min(after) > max(counters),
       "before %s, after %s" % (counters, after))

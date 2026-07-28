@@ -5,6 +5,10 @@
 firmware/config.py
 firmware/config.lamp*.py
 
+# Staged by tools/prepare_upload.py for Thonny. Each one contains a
+# copy of a lamp's config.py, so it carries the real session keys.
+upload/
+
 # IDE noise
 .idea/
 
