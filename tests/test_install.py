@@ -71,6 +71,7 @@ files = device_files()
 remotes = [r for _l, r in files]
 check("main.py goes to the board root", ":main.py" in remotes)
 check("radio_check goes along for later", ":radio_check.py" in remotes)
+check("and so does the strip test", ":strip_test.py" in remotes)
 check("the LoRaWAN stack is included",
       ":lamp/net/lorawan_abp.py" in remotes
       and ":lamp/net/sx1262.py" in remotes, remotes)

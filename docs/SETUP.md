@@ -573,7 +573,7 @@ A brand-new lamp starts at counter zero, so until it hears from its
 friend both lamps will look the same dull warm white. Touch one — the
 first touches of a day travel in seconds — and the other starts
 drifting. Only a busy day's later touches wait for the budget; see
-[the README](../README.md#living-with-ten-messages-a-day).
+[the README](../README.md#living-with-a-rationed-radio).
 
 ---
 

@@ -28,7 +28,7 @@ plus an LED strip. **~€35 a lamp, once. Nothing after that.**
 | **Hold 5 s** | toggle the control network |
 
 Each lamp runs its own WiFi network, always on, so you can control it
-from a phone without spending one of its ten daily messages:
+from a phone without spending any of its daily radio budget:
 
 | | |
 |---|---|
@@ -109,9 +109,15 @@ half-filled key, or a password WPA2 would silently ignore.
 
 ## The idea
 
-A lamp on a network that delivers **ten messages a day**, out of order,
-with losses, and no acknowledgements. That sounds like a problem. It
-turned out to be the design.
+A lamp on a network that delivers a handful of messages a day, out of
+order, with losses, and no acknowledgements. That sounds like a
+problem. It turned out to be the design.
+
+The number that shaped it is **ten** — TTN's Fair Use Policy asks for
+at most ten downlinks per device per day. The lamp is built to be
+correct at that rate, which is what makes it robust at any rate. The
+default budget is more generous (`LORA_DAILY_BUDGET = 48`) and it is
+yours to set; the design does not depend on the number.
 
 The lamps never send each other colours. Each owns a **grow-only
 counter** and only ever increments its own; the colour you see is a
@@ -135,12 +141,12 @@ touch — as in the original project. Set `NUM_LEDS` and `NUM_GROUPS` in
 `.env`; `NUM_GROUPS = 1` gives one flat colour.
 
 They cost **nothing on the wire.** Rather than transmitting a colour per
-zone on a link that allows ten messages a day, both lamps run the same
-small hash over the same agreed counter and arrive at identical stripes.
+zone on a link this thin, both lamps run the same small hash over the
+same agreed counter and arrive at identical stripes.
 Convergence comes free: same counter in, same pattern out.
 
-**→ [docs/PROTOCOL.md](docs/PROTOCOL.md)** for how, and why ten a day
-shaped all of it.
+**→ [docs/PROTOCOL.md](docs/PROTOCOL.md)** for how, and for what the
+radio budget actually costs.
 
 ---
 
@@ -169,8 +175,10 @@ application does *not* make one reach the other — uplinks stop at the
 network server. The bridge is the glue that turns lamp A's uplink into
 lamp B's downlink.
 
-**Reading is free, writing is rationed.** 30 s of uplink airtime a day,
-but only **ten downlinks**. Everything follows from that one number.
+**Reading is free, writing is rationed.** TTN's Fair Use Policy is 30 s
+of uplink airtime and **ten downlinks** per device per day. It is a
+policy, not a fence — but downlinks are the expensive direction for the
+shared gateway, so the lamp is designed to be correct within it.
 
 ---
 
@@ -206,7 +214,7 @@ placement beats any antenna you can buy.
 
 ---
 
-## Living with ten messages a day
+## Living with a rationed radio
 
 The catch is that the ten are *your friend's*. Every message you send
 becomes a downlink on their lamp, so however freely yours could transmit,
@@ -269,6 +277,7 @@ docs/
 | `tools/preview_portal.py` | the lamp's page, on your laptop |
 | `tools/simulate.py` | two lamps over a week, in your terminal |
 | `tools/test_bridge.py` | prove the Cloudflare bridge works |
+| `tools/strip_test.py` | flash the strip through colours; says what you should see |
 | `tools/radio_check.py` | run on the lamp when a radio won't talk |
 | `tools/validate_hw/` | independent C++ verdict on the radio (RadioLib) |
 | `tools/run_bridge_locally.mjs` | run the bridge offline |

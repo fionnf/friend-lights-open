@@ -250,6 +250,43 @@ mpremote connect /dev/ttyACM0 exec "import sys; print(sys.implementation)"
 
 ---
 
+## Check the strip first
+
+Before the radio, before TTN, before anything: does the strip work and
+is it wired the way `config.py` thinks it is?
+
+```bash
+mpremote connect /dev/ttyACM0 run tools/strip_test.py
+```
+
+In Thonny: open `strip_test.py` and press **F5**. (It is also copied
+onto the board, so `run strip_test.py` works from anywhere.)
+
+It flashes the strip through a known sequence and **prints what each
+step should look like**, because the board cannot see its own LEDs —
+so every fault shows up as a mismatch between what it says and what you
+see. Ninety seconds, and it ends with a table mapping each mismatch to
+the one line in `config.py` that fixes it:
+
+| What you see | What it means |
+|---|---|
+| It says RED, it looks GREEN | `LED_ORDER` — SK6812 is `GRBW`, WS2812 is `GRB` |
+| The chase stops partway | `NUM_LEDS` is higher than the strip really is — count the lit ones |
+| The chase runs from the far end | `REVERSE_LEDS = True` |
+| Only the first pixel or two light | Data line: the resistor, lead length, or no shared ground |
+| Flicker, or the board resets | Power — feed the strip from 5 V, not through the XIAO |
+| Nothing at all | `LED_PIN`, the resistor on the wrong line, or no 5 V at the strip |
+
+It also reads the touch pad live for five seconds so you can see what
+your pad actually does and set `TOUCH_THRESHOLD` from real numbers
+rather than from the default.
+
+It never transmits, so the antenna does not matter and nothing can be
+damaged. Worth running the moment the firmware is on: a miswired strip
+looks exactly like broken firmware, and this rules it out.
+
+---
+
 ## The radio
 
 **Neither radio module gets flashed.** The Wio-SX1262 has no processor

@@ -87,7 +87,11 @@ def device_files(root=ROOT):
     derived by walking firmware/ so this can never drift from what the
     firmware actually is."""
     out = [(os.path.join(root, "firmware", "main.py"), ":main.py"),
-           (os.path.join(root, "tools", "radio_check.py"), ":radio_check.py")]
+           # The two hardware checks travel with the firmware, so they
+           # are on the board when someone needs them — which is
+           # usually when the lamp is on a shelf and the repo is not.
+           (os.path.join(root, "tools", "radio_check.py"), ":radio_check.py"),
+           (os.path.join(root, "tools", "strip_test.py"), ":strip_test.py")]
     lamp = os.path.join(root, "firmware", "lamp")
     for dirpath, _dirs, files in os.walk(lamp):
         for name in sorted(files):

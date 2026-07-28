@@ -13,6 +13,7 @@ all — a bricked lamp means a friend posts it back to you.
 Run from the repo root:   python3 tests/test_firmware.py
 """
 import os, shutil, sys, tempfile
+import traceback as _tb
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -338,6 +339,51 @@ def run_finder_checks():
           "radio_check" in said, said)
 
 
+def run_strip_test_checks():
+    """Execute tools/strip_test.py against the stubs.
+
+    It is a hardware tool, so nothing here can tell whether an LED lit
+    — but the neopixel stub asserts channel range and tuple width on
+    every write, so running it end to end proves the tool never drives
+    an out-of-range value or a wrong-width pixel, and never raises. It
+    is the first thing anyone runs on a new board; it failing at that
+    moment would be the worst possible first impression."""
+    print("\nstrip test tool")
+    import io, contextlib
+    path = os.path.join(ROOT, "tools", "strip_test.py")
+    src = open(path).read()
+
+    # It sleeps ~25 s of real time when run for a human. The stub clock
+    # advances instead of waiting, so this is instant — but only if the
+    # tool takes its sleeps from utime rather than time.
+    check("it sleeps via utime, so the stub clock applies",
+          "import time" not in src and "utime" in src)
+
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            exec(compile(src, path, "exec"), {"__name__": "__main__"})
+        ran = True
+    except SystemExit as e:
+        ran = (e.code in (None, 0))
+    except Exception as e:
+        _tb.print_exc()
+        ran = False
+        check("strip_test.py ran without raising", False, repr(e))
+    text = out.getvalue()
+
+    check("strip_test.py runs end to end", ran)
+    check("it reports the config it is using", "LED_ORDER" in text)
+    check("it names the colour it expects for each channel",
+          all(c in text for c in ("RED", "GREEN", "BLUE")), text[:200])
+    check("it flashes between colours, as asked",
+          "6/6" in text and "amber" in text)
+    check("it ends with what to change when something looked wrong",
+          "what to change" in text and "REVERSE_LEDS" in text)
+    check("and it points at the radio check next",
+          "radio_check" in text)
+
+
 def run_router_checks():
     print("\nrouter")
     from net.transport import Router, Transport
@@ -394,6 +440,7 @@ if __name__ == "__main__":
     run_budget_checks()
     run_abp_checks()
     run_finder_checks()
+    run_strip_test_checks()
     run_router_checks()
     print("\n%d failed" % len(failures) if failures else "\nall passed")
     sys.exit(1 if failures else 0)
