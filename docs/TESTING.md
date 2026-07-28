@@ -161,12 +161,16 @@ and is ignored by the network, with nothing in the TTN console to say a
 frame ever arrived — so published numbers are the only way to have any
 confidence before a gateway exists.
 
-`test_sx1262.py` covers finding the radio rather than driving it. The
-register-level driver genuinely needs the chip — reading a register back
-*is* the test, and a stub that returns what it was handed only tests
-itself. What it does cover is which pinout gets probed, in what order,
-and that a pinout sharing a pin with the LED strip is skipped instead of
-driven.
+`test_sx1262.py` covers finding the radio, and then the exact bytes the
+driver puts on the SPI bus — checked against the datasheet, not against
+the driver's own idea of itself. The chip can't be simulated, but the
+transactions can be read, and every fault in this family is silent on
+hardware: a response mis-framed by one byte reads as "TX never
+completes" on a radio that is transmitting perfectly, and a missing
+errata write is just fewer of the friend's messages arriving. The suite
+pins the response framing, the PLL frequency words, the per-band image
+calibration, the inverted-IQ and PA-clamp errata fixes, the public sync
+word, and the TCXO ordering.
 
 `test_firmware.py` **executes** `main()` rather than compiling it. On the
 original project a bad push could be fixed over the air. Here it cannot:

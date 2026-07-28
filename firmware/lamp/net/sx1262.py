@@ -11,6 +11,12 @@
 # no CAD. Every extra register write here is one more thing that can be
 # wrong on hardware nobody has yet.
 #
+# The exceptions to "minimal" are the documented silicon errata
+# (datasheet ch. 15) and the per-band image calibration: each one fails
+# as quietly lost packets or lost sensitivity, never as an error, so
+# leaving them out doesn't make the driver simpler — it makes it lie.
+# tests/test_sx1262.py checks the exact bytes for every one of them.
+#
 # ── Wiring ───────────────────────────────────────────────────────────
 # The XIAO ESP32S3 + Wio-SX1262 kit joins the two boards with a
 # board-to-board connector, NOT the through-hole header, and the two use
@@ -62,6 +68,8 @@ _READ_REGISTER = 0x1D
 _GET_RX_BUFFER_STATUS = 0x13
 _SET_DIO2_AS_RF_SWITCH = 0x9D
 _SET_DIO3_AS_TCXO_CTRL = 0x97
+_CALIBRATE_IMAGE = 0x98
+_CLR_DEVICE_ERRORS = 0x07
 
 _PACKET_TYPE_LORA = 0x01
 _STANDBY_RC = 0x00
@@ -76,6 +84,23 @@ _REG_SYNC_WORD = 0x0740
 # listens for. 0x1424 is private. Getting this wrong is the classic
 # "transmits fine, nothing ever hears it" fault.
 SYNC_WORD_PUBLIC = 0x3444
+
+# Registers behind the silicon errata (datasheet chapter 15). Each of
+# these is a documented chip fault with a documented fix, applied by
+# every serious driver — RadioLib does all three.
+_REG_IQ_POLARITY = 0x0736    # 15.4: packet loss on inverted IQ RX
+_REG_TX_CLAMP = 0x08D8       # 15.2: PA clamping eats ~5 dB on SX1262
+_REG_RX_GAIN = 0x08AC        # not errata: 0x96 = boosted RX gain
+
+# Image calibration is per frequency band (datasheet 9.2.1). Skipping it
+# costs receive sensitivity — invisibly, since transmit still works.
+_IMAGE_CAL_BANDS = (
+    (430_000_000, 440_000_000, b"\x6B\x6F"),
+    (470_000_000, 510_000_000, b"\x75\x81"),
+    (779_000_000, 787_000_000, b"\xC1\xC5"),
+    (863_000_000, 870_000_000, b"\xD7\xDB"),
+    (902_000_000, 928_000_000, b"\xE1\xE9"),
+)
 
 
 class SX1262:
@@ -96,6 +121,7 @@ class SX1262:
         self._rx_active = False
         self._tcxo_voltage = tcxo_voltage
         self._tcxo_delay_us = tcxo_delay_us
+        self._cal_band = None
 
     def close(self):
         """Give the bus and the pins back.
@@ -134,6 +160,15 @@ class SX1262:
         return True
 
     def _cmd(self, opcode, data=b"", read=0):
+        """One SPI transaction. SPI is full duplex: every byte WRITTEN
+        also clocks a byte out of the chip, and MicroPython's write()
+        throws those away. So for a command that answers, the opcode is
+        written ALONE and everything after it is read — the first byte
+        read is then the chip's status, and data follows. Writing a NOP
+        first instead silently shifts every response one byte early,
+        which reads as "TX never completes" on hardware that is in fact
+        transmitting perfectly.
+        """
         self._wait()
         self._nss.value(0)
         self._spi.write(bytes([opcode]) + bytes(data))
@@ -157,7 +192,9 @@ class SX1262:
         return data
 
     def irq_status(self):
-        raw = self._cmd(_GET_IRQ_STATUS, b"\x00", read=3)
+        # Transaction: [opcode] [status] [irq 15:8] [irq 7:0].
+        # No NOP in the write — see _cmd for why that matters.
+        raw = self._cmd(_GET_IRQ_STATUS, read=3)
         return (raw[1] << 8) | raw[2] if len(raw) >= 3 else 0
 
     def clear_irq(self, mask=0xFFFF):
@@ -196,6 +233,10 @@ class SX1262:
         self._cmd(_CALIBRATE, b"\x7F")
         utime.sleep_ms(5)
         self._wait(1000)
+        # The chip tried its crystal before we told it about the TCXO,
+        # and remembers that as XOSC_START_ERR forever unless cleared.
+        # Harmless, but it would make every later error read a lie.
+        self._cmd(_CLR_DEVICE_ERRORS, b"\x00\x00")
 
         self.set_frequency(frequency)
         self._set_pa(power)
@@ -203,6 +244,10 @@ class SX1262:
         self._cmd(_SET_BUFFER_BASE, b"\x00\x00")
         self._write_register(_REG_SYNC_WORD,
                              bytes([(sync_word >> 8) & 0xFF, sync_word & 0xFF]))
+        # Boosted RX gain: ~2 dB more sensitivity for ~0.7 mA. This lamp
+        # is mains-powered and listens continuously, so the trade is
+        # free — and 2 dB is real distance on a marginal gateway link.
+        self._write_register(_REG_RX_GAIN, b"\x96")
         self._preamble = preamble
         self._sf = sf
         # Everything on DIO1, since that is the only interrupt line wired.
@@ -259,8 +304,22 @@ class SX1262:
         return data
 
     def set_frequency(self, hz):
-        # 2^25 / 32 MHz crystal
-        raw = int(hz * 33554432 / 32000000)
+        hz = int(hz)
+        # The receiver's image rejection is calibrated per band, not by
+        # Calibrate() — without this, transmit is perfect and receive is
+        # quietly deaf. Once per band; retunes within EU868 skip it.
+        for lo, hi, params in _IMAGE_CAL_BANDS:
+            if lo <= hz <= hi:
+                if self._cal_band != params:
+                    self._cmd(_CALIBRATE_IMAGE, params)
+                    self._wait(1000)
+                    self._cal_band = params
+                break
+        # PLL steps of 32 MHz / 2^25. Integer math on purpose: this
+        # port's floats are 32-bit, and hz * 2^25 needs 55 bits — the
+        # float version lands tens of Hz off. Harmless here, but exact
+        # is free and this is the sort of line people copy.
+        raw = (hz << 25) // 32_000_000
         self._cmd(_SET_RF_FREQUENCY,
                   bytes([(raw >> 24) & 0xFF, (raw >> 16) & 0xFF,
                          (raw >> 8) & 0xFF, raw & 0xFF]))
@@ -268,6 +327,11 @@ class SX1262:
     def _set_pa(self, dbm):
         # SX1262 high-power PA, then clamp to the EU868 legal ceiling.
         self._cmd(_SET_PA_CONFIG, b"\x04\x07\x00\x01")
+        # Errata 15.2: the PA's over-voltage clamp trips ~5 dB early on
+        # the SX1262. The documented fix is setting bits 4:1 here.
+        clamp = self._read_register(_REG_TX_CLAMP, 1)
+        if clamp:
+            self._write_register(_REG_TX_CLAMP, bytes([clamp[0] | 0x1E]))
         dbm = max(-9, min(22, int(dbm)))
         self._cmd(_SET_TX_PARAMS, bytes([dbm & 0xFF, 0x04]))   # 200us ramp
 
@@ -292,6 +356,14 @@ class SX1262:
                          length & 0xFF,
                          0x00 if rx else 0x01,       # CRC off for downlink
                          0x01 if rx else 0x00]))     # invert IQ for downlink
+        # Errata 15.4: receiving with inverted IQ — which is every
+        # LoRaWAN downlink — drops packets unless bit 2 here is cleared,
+        # and set again for standard IQ. A driver without this looks
+        # finished and loses a fraction of everything the friend sends.
+        iq = self._read_register(_REG_IQ_POLARITY, 1)
+        if iq:
+            value = (iq[0] & ~0x04) if rx else (iq[0] | 0x04)
+            self._write_register(_REG_IQ_POLARITY, bytes([value]))
 
     # ── Transmit ────────────────────────────────────────────
 
@@ -342,7 +414,9 @@ class SX1262:
         self.clear_irq()
         if status & IRQ_CRC_ERR:
             return None
-        info = self._cmd(_GET_RX_BUFFER_STATUS, b"\x00", read=3)
+        # [opcode] [status] [payload length] [buffer start] — same
+        # framing rule as irq_status.
+        info = self._cmd(_GET_RX_BUFFER_STATUS, read=3)
         if len(info) < 3:
             return None
         length, start = info[1], info[2]

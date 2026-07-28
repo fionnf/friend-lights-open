@@ -174,5 +174,126 @@ check("and stops driving NSS and RST",
       radio._nss.mode == 1 and radio._reset.mode == 1)
 
 
+# ── The bytes on the wire ────────────────────────────────────
+# The chip cannot be simulated, but the SPI transactions can be READ.
+# Each check below pins a byte sequence to the datasheet, because every
+# fault in this family is silent on hardware: a response mis-framed by
+# one byte reads as "TX never completes" on a radio that is transmitting
+# perfectly, and a missing errata write reads as nothing at all — just
+# fewer of the friend's messages arriving. This is the only place these
+# can fail loudly.
+print("\nThe bytes on the wire")
+
+
+class ScriptedSPI:
+    """Records every write; serves queued reads, then zeros."""
+
+    def __init__(self):
+        self.written = []
+        self.queue = []
+
+    def write(self, data):
+        self.written.append(bytes(data))
+
+    def read(self, n, write=0x00):
+        if self.queue:
+            out = self.queue.pop(0)
+            return bytes(out[:n]) + bytes(n - len(out[:n]))
+        return bytes(n)
+
+    def deinit(self):
+        pass
+
+    def wrote(self, prefix):
+        return any(w[:len(prefix)] == bytes(prefix) for w in self.written)
+
+
+bus = ScriptedSPI()
+radio = SX1262(spi=bus, **B2B)
+
+ok = radio.begin(frequency=868_100_000, sf=9, power=14)
+check("begin() succeeds on the scripted bus", ok is True)
+
+# ── Response framing — THE regression ──
+# GetIrqStatus answers [status][irq 15:8][irq 7:0] starting at the byte
+# AFTER the opcode. SPI is full duplex, so a NOP included in the write
+# consumes the status byte invisibly and every later index is off by
+# one: TX_DONE (0x0001) reads back as 0x01xx, the driver waits for a
+# completion that already happened, and every send "times out" on
+# hardware that transmitted. probe() still passes. This is the exact
+# fault this file exists to keep out.
+bus.written = []
+bus.queue = [b"\x00\x00\x01"]        # status, irq15:8, irq7:0 = TX_DONE
+status = radio.irq_status()
+check("GET_IRQ_STATUS writes the opcode alone, no NOP",
+      bus.written[-1] == b"\x12", bus.written[-1])
+check("so TX_DONE in the low byte reads back as 0x0001",
+      status == 0x0001, hex(status))
+
+# ── Frequency ──
+# 868.1 MHz in PLL steps of 32 MHz / 2^25, computed in exact integer
+# math — hz << 25 needs 55 bits and this port's floats carry 24.
+expected = (868_100_000 << 25) // 32_000_000
+freq_cmd = bytes([0x86, (expected >> 24) & 0xFF, (expected >> 16) & 0xFF,
+                  (expected >> 8) & 0xFF, expected & 0xFF])
+bus.written = []
+radio.set_frequency(868_100_000)
+check("frequency bytes are the exact PLL steps for 868.1 MHz",
+      any(w == freq_cmd for w in bus.written), bus.written)
+
+# ── Image calibration ──
+# Receive-side only, so a missing one is invisible from the TX side.
+check("image calibration ran for the 863-870 MHz band",
+      radio._cal_band == b"\xD7\xDB", radio._cal_band)
+bus.written = []
+radio.set_frequency(869_525_000)     # RX2 — same band
+check("and is not repeated while staying inside the band",
+      not bus.wrote(b"\x98"), bus.written)
+
+# ── The errata, by register ──
+bus.written = []
+radio._set_packet_params(32, rx=True)
+check("RX (inverted IQ) clears bit 2 of 0x0736 — errata 15.4",
+      any(w[:3] == b"\x0D\x07\x36" and not (w[3] & 0x04)
+          for w in bus.written if len(w) == 4), bus.written)
+bus.written = []
+radio._set_packet_params(32, rx=False)
+check("TX (standard IQ) sets it again",
+      any(w[:3] == b"\x0D\x07\x36" and (w[3] & 0x04)
+          for w in bus.written if len(w) == 4), bus.written)
+
+bus.written = []
+radio._set_pa(14)
+check("PA clamp bits 4:1 are set in 0x08D8 — errata 15.2",
+      any(w[:3] == b"\x0D\x08\xD8" and (w[3] & 0x1E) == 0x1E
+          for w in bus.written if len(w) == 4), bus.written)
+
+# ── The rest of begin(), against the datasheet ──
+bus2 = ScriptedSPI()
+r2 = SX1262(spi=bus2, **B2B)
+r2.begin(frequency=868_100_000, sf=9, power=14)
+check("TCXO: DIO3 at 1.8 V (code 0x02), before anything else",
+      bus2.wrote(b"\x97\x02"), None)
+check("device errors cleared after the TCXO-less calibrate",
+      bus2.wrote(b"\x07\x00\x00"), None)
+check("sync word 0x3444 — the public network's, not the default",
+      bus2.wrote(b"\x0D\x07\x40\x34\x44"), None)
+check("boosted RX gain (0x96) for the always-open Class C receiver",
+      bus2.wrote(b"\x0D\x08\xAC\x96"), None)
+check("DIO2 switches the antenna path",
+      bus2.wrote(b"\x9D\x01"), None)
+
+# ── A whole send ──
+bus.written = []
+bus.queue = [b"\x00\x00\x00",        # first irq poll: nothing yet
+             b"\x00\x00\x01"]        # then TX_DONE
+sent = radio.send(b"0123456789")
+check("send() completes when TX_DONE arrives", sent is True)
+check("the payload went to buffer offset 0",
+      bus.wrote(b"\x0E\x00" + b"0123456789"), bus.written)
+check("and TX started with no chip-side timeout",
+      bus.wrote(b"\x83\x00\x00\x00"), None)
+
+
 print("\n%d failed\n" % len(failures) if failures else "\nall passed\n")
 sys.exit(1 if failures else 0)

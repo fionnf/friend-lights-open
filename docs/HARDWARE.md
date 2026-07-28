@@ -171,6 +171,17 @@ usable.
 If you ever port this or compare against another driver, that ordering is
 the first thing to check.
 
+### The silicon errata
+
+The SX1262 has documented chip faults (datasheet chapter 15), and the
+driver applies the documented fixes: the inverted-IQ receive fix
+(15.4 — without it a fraction of all downlinks is silently lost), the
+PA clamping fix (15.2 — without it transmit power falls ~5 dB short),
+and per-band image calibration (without it the receiver is quietly less
+sensitive). None of these ever fails as an error; each just makes the
+link worse than the numbers say it should be. `tests/test_sx1262.py`
+checks the exact bytes for all of them.
+
 ### Check the radio before blaming anything else
 
 ```bash

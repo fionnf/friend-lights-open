@@ -17,14 +17,14 @@ if [ -n "$LAMP" ]; then
   CONFIG="$ROOT/firmware/config.lamp$LAMP.py"
   if [ ! -f "$CONFIG" ]; then
     echo "No config for lamp $LAMP." >&2
-    echo "  python3 tools/make_config.py --lamp $LAMP" >&2
+    echo "  python3 tools/apply_env.py          (writes both from .env)" >&2
     exit 1
   fi
 else
   CONFIG="$ROOT/firmware/config.py"
   if [ ! -f "$CONFIG" ]; then
     echo "firmware/config.py is missing." >&2
-    echo "  python3 tools/make_config.py        (recommended)" >&2
+    echo "  python3 tools/apply_env.py          (recommended)" >&2
     echo "  cp firmware/config.example.py firmware/config.py" >&2
     exit 1
   fi
