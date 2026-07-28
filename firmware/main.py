@@ -219,6 +219,24 @@ def _find_sx1262():
         print("[lora] no SX1262 answered — %s" % detail)
         print("       check the board-to-board connector is seated, then")
         print("       run tools/radio_check.py for a pin-by-pin report")
+        return None
+
+    # The probe found the pins with the native driver. Which driver
+    # then RUNS the radio is a separate choice: "upstream" (default) is
+    # micropython-lib's SX1262 driver, maintained by MicroPython's own
+    # maintainers; "native" is this project's register-level one. If
+    # the upstream driver cannot come up, fall back rather than dark.
+    if str(_cfg("LORA_DRIVER", "upstream")).lower() != "native":
+        pins = dict(radio.pins)
+        radio.close()
+        try:
+            from net.sx1262_mplib import UpstreamSX1262
+            radio = UpstreamSX1262(spi_id=_cfg("SX_SPI_ID", 1), **pins)
+            print("[lora] driver: micropython-lib sx126x")
+        except Exception as e:
+            print("[lora] upstream driver failed (%s) — using native" % e)
+            from net.sx1262 import SX1262
+            radio = SX1262(spi_id=_cfg("SX_SPI_ID", 1), **pins)
     return radio
 
 
@@ -243,7 +261,8 @@ def build_transports(tick=None):
                     sf=_cfg("LORA_SF", 9),
                     tx_power=_cfg("LORA_TX_POWER", 14),
                     min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
-                                         3 * 60 * 60 * 1000))
+                                         3 * 60 * 60 * 1000),
+                    burst=_cfg("LORA_BURST", 4))
             else:
                 from machine import UART, Pin
                 from net.lorawan_e5 import LoRaWANE5
@@ -259,7 +278,8 @@ def build_transports(tick=None):
                     lora_class=_cfg("LORA_CLASS", "C"),
                     port=_cfg("LORA_PORT", 8),
                     min_interval_ms=_cfg("LORA_MIN_INTERVAL_MS",
-                                         3 * 60 * 60 * 1000))
+                                         3 * 60 * 60 * 1000),
+                    burst=_cfg("LORA_BURST", 4))
             lora.start(tick=tick)
             router.add(lora)
         except Exception as e:

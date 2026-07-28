@@ -295,5 +295,42 @@ check("and TX started with no chip-side timeout",
       bus.wrote(b"\x83\x00\x00\x00"), None)
 
 
+# ── The vendored upstream driver ─────────────────────────────
+# mp_lora/ is byte-identical micropython-lib code, so its behaviour is
+# upstream's to answer for — but that it PARSES, IMPORTS against the
+# stubs, and still exposes the class the adapter names is ours to
+# check, because a vendoring mistake fails at someone's kitchen table.
+print("\nThe vendored upstream driver")
+
+import py_compile
+
+MP_LORA = os.path.join(ROOT, "firmware", "lamp", "net", "mp_lora")
+for name in sorted(os.listdir(MP_LORA)):
+    if name.endswith(".py"):
+        try:
+            py_compile.compile(os.path.join(MP_LORA, name), doraise=True)
+            ok = True
+        except py_compile.PyCompileError as e:
+            ok = False
+        check("%s compiles" % name, ok)
+
+# MicroPython's `time` is our utime; alias it so the import works here.
+import utime
+sys.modules.setdefault("time", utime)
+try:
+    import net.mp_lora as mp_lora
+    check("the package imports against the stubs", True)
+    check("and exposes the SX1262 the adapter constructs",
+          hasattr(mp_lora, "SX1262"))
+except Exception as e:
+    check("the package imports against the stubs", False, repr(e))
+
+from net.sx1262_mplib import UpstreamSX1262
+for method in ("begin", "listen", "receive", "send",
+               "set_frequency", "set_modulation", "sleep", "close"):
+    check("the facade speaks %s()" % method,
+          callable(getattr(UpstreamSX1262, method, None)))
+
+
 print("\n%d failed\n" % len(failures) if failures else "\nall passed\n")
 sys.exit(1 if failures else 0)

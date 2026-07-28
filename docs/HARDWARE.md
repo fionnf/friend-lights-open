@@ -155,6 +155,20 @@ The B2B column matches Seeed's own RadioLib example for this kit —
 independent sources agreeing is about as much certainty as is available
 without the hardware in hand.
 
+### Whose code drives the chip
+
+Two drivers, one LoRaWAN stack. By default the chip is driven by
+**micropython-lib's SX1262 driver** (vendored in
+`firmware/lamp/net/mp_lora/`, unmodified) — written and maintained by
+MicroPython's own maintainers, and it verifies the chip's status the
+moment it is constructed. This project's register-level driver
+(`sx1262.py`) stays on as the pin **probe** and as the **fallback**:
+`LORA_DRIVER = "native"` in `config.py` switches to it, and the
+firmware falls back to it automatically if the upstream driver fails
+to come up. The LoRaWAN layer above — MIC, encryption, frame counters,
+Class C — is this project's either way, because no maintained
+MicroPython LoRaWAN stack exists.
+
 ### The TCXO — read this before deciding the board is dead
 
 This module has **no crystal.** Its reference clock is an active TCXO
