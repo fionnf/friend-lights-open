@@ -209,6 +209,25 @@ If step 1 finds nothing on either pinout, it is the connector rather
 than a setting — nothing in `config.py` can cause both to fail. Press
 the two boards together again until they click.
 
+### A second opinion in C++
+
+If `radio_check.py` fails and you want to know whether it is the
+hardware or this project's driver, `tools/validate_hw/validate_hw.ino`
+is a small Arduino sketch using **RadioLib** — the same library as
+Seeed's own examples for this kit. If the sketch transmits and the
+firmware doesn't, the fault is in the Python driver (please open an
+issue); if neither does, it is the module, the seating, or the antenna.
+Flashing it erases MicroPython; `python3 tools/install.py` puts
+everything back.
+
+Why isn't the whole firmware C++, then? Because RadioLib's LoRaWAN
+stack is **Class A only** — it listens for a few seconds after each
+uplink and is otherwise deaf. This lamp receives at most ten messages a
+day at unpredictable times, so it must listen *continuously* (Class C),
+and the practical way to have Class C on this module is the stack this
+project carries. The sketch stays what it is: a hardware truth-teller,
+not a lamp.
+
 ## Antenna
 
 Both modules ship with a small antenna, which is fine to start. Before

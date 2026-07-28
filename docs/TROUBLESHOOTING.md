@@ -11,6 +11,7 @@ Where to look is covered in
 | Symptom | Cause | Fix |
 |---|---|---|
 | `[lora] no SX1262 answered` | Neither pinout replied, so it is the connector, not a setting | Press the boards together until they click, then `tools/radio_check.py` |
+| radio_check fails and you suspect the driver itself | — | Flash `tools/validate_hw/validate_hw.ino` (RadioLib, Seeed's own library) for an independent verdict; `install.py` restores MicroPython after |
 | Radio found, uplinks never appear in TTN | No gateway in range — the most likely single cause | Move to a window; check the [TTN map](https://www.thethingsnetwork.org/map) |
 | Uplinks stop appearing after a reset in the console | Frame counters out of step | Delete `lorawan_fcnt.json` from the lamp so it starts from zero too |
 | *(E5)* `no response — check wiring and baud rate` | TX/RX not crossed | XIAO TX → E5 RX, XIAO RX → E5 TX |

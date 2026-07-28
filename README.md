@@ -249,6 +249,7 @@ docs/
 | `tools/simulate.py` | two lamps over a week, in your terminal |
 | `tools/test_bridge.py` | prove the Cloudflare bridge works |
 | `tools/radio_check.py` | run on the lamp when a radio won't talk |
+| `tools/validate_hw/` | independent C++ verdict on the radio (RadioLib) |
 | `tools/run_bridge_locally.mjs` | run the bridge offline |
 
 | Doc | |
