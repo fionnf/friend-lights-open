@@ -51,15 +51,27 @@ GROUP_MAX_LEDS = 8
 GROUP_SPREAD   = 0.35
 
 # ── Input ───────────────────────────────────────────────────
-# The RP2040 has NO capacitive touch peripheral — that is an ESP32
-# feature — so a plain push button stands in. Wire it between GP15 and
-# any GND pin; the internal pull-up does the rest, no resistor needed.
-# Same three gestures as the real lamp: tap, hold 1.2 s, hold 5 s.
-TOUCH_PINS  = []
-BUTTON_PINS = [15]
+# Capacitive touch, exactly as on the real lamp. The RP2040 has no
+# touch peripheral, so the firmware measures charge time instead — the
+# technique the original project used on a Pico. One extra part:
+#
+#     GP15 --+-- 1 MOhm --- GND
+#            `-- pad (bare copper, foil, a screw head)
+#
+# The 1 MOhm pull-down is what makes the pad discharge slowly enough to
+# time. Nothing else changes: same TOUCH_PINS key, same three gestures.
+TOUCH_PINS = [15]
 
-# No button either? Leave BUTTON_PINS empty and drive it entirely from
-# the control page below.
+# Counts above the resting baseline that mean "touched". This is a
+# COMPLETELY different scale from the ESP32's (single digits, not tens
+# of thousands) and it depends on your pad, your wiring and the length
+# of the lead. Run strip_test.py — it prints live readings and tells
+# you what to put here.
+TOUCH_THRESHOLD_CHARGE = 8
+
+# Prefer a push button? Comment out TOUCH_PINS above and use this
+# instead — no resistor, just a switch between the pin and GND.
+BUTTON_PINS = []
 
 # ── Feel ────────────────────────────────────────────────────
 ARRIVAL_FADE_MS = 6 * 1000

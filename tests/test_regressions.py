@@ -48,12 +48,14 @@ class Pad:
 
 
 def press(ms):
-    s = TouchSensor.__new__(TouchSensor)
+    # Built through the real __init__ and then given a fake pad, rather
+    # than __new__ plus hand-set attributes: the hand-built version
+    # broke the moment the sensor gained a field, which is a test
+    # failing for a reason that has nothing to do with the bug it
+    # guards.
+    s = TouchSensor(4, 100)
     s._pad = Pad()
-    s._threshold = 100
     s._baseline = 1000
-    s._touched = False
-    s._started = 0
     events = []
     s._pad.v = 2000                             # finger down
     for _ in range(int(ms / 50) + 1):

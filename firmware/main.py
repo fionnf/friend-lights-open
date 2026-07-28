@@ -461,7 +461,8 @@ def main():
     on, brightness = restore_state(shared)
 
     touch = TouchManager(_cfg("TOUCH_PINS", []), _cfg("TOUCH_THRESHOLD", 20000),
-                         buttons=_cfg("BUTTON_PINS", []))
+                         buttons=_cfg("BUTTON_PINS", []),
+                         charge_threshold=_cfg("TOUCH_THRESHOLD_CHARGE", None))
     touch.calibrate_all()
 
     router = build_transports(tick=pulser.tick)

@@ -48,6 +48,11 @@ The touch pad needs **no external resistor** — the ESP32-S3 has hardware
 touch channels. A bare copper pad, a strip of foil, or a screw head all
 work. `TOUCH_PINS = []` if you don't want one.
 
+On a board with no touch peripheral — the RP2040 in a Pico W, say — the
+firmware falls back to measuring charge time against an external 1 MΩ
+pull-down, which is how the original project did it. Same `TOUCH_PINS`,
+same gestures, one extra resistor. See [pico_w/](../pico_w/).
+
 All pins are set in `config.py`, which is generated from `.env` — the
 defaults above are just defaults.
 

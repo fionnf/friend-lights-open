@@ -397,6 +397,101 @@ def run_strip_test_checks():
           "radio_check" in text)
 
 
+def run_touch_checks():
+    """Capacitive touch on a board with no touch peripheral.
+
+    The RP2040 measures charge time against an external 1 MOhm
+    pull-down instead. GPIO timing cannot be simulated, so `_measure`
+    is stubbed and what gets tested is everything around it: the
+    gestures, the drifting baseline, and the failure behaviour — which
+    is where both of this sensor's known faults live."""
+    print("\ntouch (charge-time)")
+    import utime as _t
+    from touch import ChargeTimeSensor, HOLD_TIME_MS, LONG_HOLD_TIME_MS
+
+    def sensor(threshold=8):
+        s = ChargeTimeSensor.__new__(ChargeTimeSensor)
+        s._pin = None
+        s._threshold = threshold
+        s._samples = 1
+        s._reading = 20                  # resting count
+        s._baseline = 20.0
+        s._last = 20
+        s._touched = False
+        s._started = 0
+        s._drifted = _t.ticks_ms()
+        s._measure = lambda: s._reading
+        return s
+
+    def press(ms, threshold=8):
+        s = sensor(threshold)
+        events = []
+        s._reading = 40                  # finger on: count rises
+        for _ in range(max(1, ms // 50)):
+            e = s.update()
+            if e:
+                events.append(e)
+            _t.sleep_ms(50)
+        s._reading = 20                  # lifted
+        e = s.update()
+        if e:
+            events.append(e)
+        return events
+
+    check("a brief press is one tap", press(200) == ["tap"], press(200))
+    check("a 1.6 s press is one hold",
+          press(HOLD_TIME_MS + 400) == ["hold"], press(HOLD_TIME_MS + 400))
+    # The fault this ordering exists to prevent: firing at the
+    # threshold meant a 5 s press toggled the lamp off on its way to
+    # opening the portal.
+    check("a 5.5 s press is ONE long_hold",
+          press(LONG_HOLD_TIME_MS + 500) == ["long_hold"],
+          press(LONG_HOLD_TIME_MS + 500))
+
+    # A rise smaller than the threshold is not a touch.
+    s = sensor(threshold=100)
+    s._reading = 40
+    check("a rise below the threshold is ignored",
+          all(s.update() is None for _ in range(5)))
+
+    # Baseline drift must be slow enough that a finger resting on the
+    # pad is never absorbed into it.
+    s = sensor()
+    s._reading = 40
+    for _ in range(200):                 # 10 s of finger, at 50 ms
+        s.update()
+        _t.sleep_ms(50)
+    check("a held finger is not absorbed into the baseline",
+          s._baseline < 30, s._baseline)
+    s._reading = 20                      # lifted after ten seconds
+    check("...so the release still registers as one gesture",
+          s.update() == "long_hold")
+
+    # And it must follow a real drift, or the pad slowly stops working.
+    s = sensor()
+    s._reading = 26                      # below threshold: a drift, not a touch
+    for _ in range(200):
+        s.update()
+        _t.sleep_ms(500)                 # 100 s
+    check("but genuine drift is followed", s._baseline > 25, s._baseline)
+
+    # A failed read returning 0 would read as a huge NEGATIVE excursion,
+    # drag the baseline toward zero, and latch the pad "touched".
+    real = ChargeTimeSensor.__new__(ChargeTimeSensor)
+    real._last = 42
+
+    class Boom:
+        def init(self, *a):
+            raise OSError("gpio gone")
+
+        def value(self, *a):
+            raise OSError("gpio gone")
+    real._pin = Boom()
+    real.MAX_COUNT = 5000
+    check("a failed reading returns the last one, never 0",
+          real._measure() == 42, real._measure())
+
+
 def run_udp_checks():
     """The WiFi broadcast transport the Pico W bench lamp runs on."""
     print("\nudp transport")
@@ -520,6 +615,7 @@ if __name__ == "__main__":
     run_abp_checks()
     run_finder_checks()
     run_strip_test_checks()
+    run_touch_checks()
     run_udp_checks()
     run_router_checks()
     print("\n%d failed" % len(failures) if failures else "\nall passed")

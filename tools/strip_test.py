@@ -175,41 +175,96 @@ for cycle in range(6):
 # property of your pad, your wiring and your hand, so the only useful
 # answer is what the numbers actually do when you touch it.
 pads = cfg("TOUCH_PINS", [4])
-banner("7. touch pad")
-if not pads:
-    print("   TOUCH_PINS is empty — skipping.")
+buttons = cfg("BUTTON_PINS", [])
+banner("7. touch")
+
+if not pads and not buttons:
+    print("   TOUCH_PINS and BUTTON_PINS are both empty — skipping.")
+elif buttons and not pads:
+    from machine import Pin
+    pin = Pin(buttons[0], Pin.IN, Pin.PULL_UP)
+    print("   button on pin %s — press it now (5 s)\n" % buttons[0])
+    seen = False
+    for i in range(50):
+        if not pin.value():
+            seen = True
+        if i % 10 == 0:
+            print("      %s" % ("PRESSED" if not pin.value() else "released"))
+        utime.sleep_ms(100)
+    print("\n   %s" % ("-> the button works." if seen else
+                        "-> never saw a press. Wrong pin, or wired to 3V3 "
+                        "rather than GND."))
 else:
+    # Two completely different techniques and two completely different
+    # scales, so the numbers below only mean something next to the
+    # threshold for THIS board.
     try:
         from machine import TouchPad, Pin
+        native = True
+    except ImportError:
+        native = False
+
+    if native:
         pad = TouchPad(Pin(pads[0]))
-        base = 0
-        for _ in range(16):
-            base += pad.read()
-            utime.sleep_ms(5)
-        base //= 16
-        print("   pin %s, resting value %d" % (pads[0], base))
-        print("   TOUCH_THRESHOLD is %s — a touch must RAISE the reading"
-              % cfg("TOUCH_THRESHOLD", 20000))
-        print("   by more than that. Put a finger on the pad now:\n")
-        peak = base
-        for i in range(50):                # ~5 seconds
-            value = pad.read()
-            peak = max(peak, value)
-            if i % 5 == 0:
-                print("      %7d   (+%d from resting)" % (value, value - base))
-            utime.sleep_ms(100)
-        rise = peak - base
-        print("\n   biggest rise seen: %d" % rise)
-        if rise > cfg("TOUCH_THRESHOLD", 20000):
-            print("   -> comfortably above the threshold. Good.")
-        elif rise > 1000:
-            print("   -> it responds, but not past TOUCH_THRESHOLD.")
-            print("      Set TOUCH_THRESHOLD to about %d." % (rise // 2))
+        read = pad.read
+        threshold = cfg("TOUCH_THRESHOLD", 20000)
+        print("   pin %s, ESP32 touch peripheral" % pads[0])
+    else:
+        # RP2040 and friends: charge-time against the 1 MOhm pull-down.
+        sys.path.append("/lamp")
+        from touch import ChargeTimeSensor
+        sensor = ChargeTimeSensor(pads[0])
+        read = sensor._measure
+        threshold = cfg("TOUCH_THRESHOLD_CHARGE",
+                        ChargeTimeSensor.DEFAULT_THRESHOLD)
+        print("   pin %s, charge-time (needs 1 MOhm to GND)" % pads[0])
+
+    base = 0
+    for _ in range(16):
+        base += read()
+        utime.sleep_ms(5)
+    base //= 16
+
+    print("   resting value %d, threshold %s" % (base, threshold))
+    print("   A touch must RAISE the reading by more than that.")
+    print("   Put a finger on the pad now:\n")
+
+    peak = base
+    quiet = base
+    for i in range(50):                # ~5 seconds
+        value = read()
+        peak = max(peak, value)
+        quiet = min(quiet, value)
+        if i % 5 == 0:
+            print("      %7d   (%+d from resting)" % (value, value - base))
+        utime.sleep_ms(100)
+
+    rise = peak - base
+    noise = base - quiet
+    print("\n   biggest rise: %d      idle noise: %d" % (rise, noise))
+    if rise > threshold and rise > noise * 3:
+        print("   -> comfortably above the threshold, and well clear of")
+        print("      the noise. Good.")
+    elif rise > noise * 3:
+        suggested = max(1, (rise + noise) // 3)
+        print("   -> it responds, but the threshold is too high.")
+        if native:
+            print("      Set TOUCH_THRESHOLD = %d" % suggested)
         else:
-            print("   -> almost no change. Either nothing touched the pad,")
-            print("      or the pad is not connected to pin %s." % pads[0])
-    except Exception as e:
-        print("   touch unavailable: %s" % e)
+            print("      Set TOUCH_THRESHOLD_CHARGE = %d" % suggested)
+    elif rise > 0:
+        print("   -> the change is not much bigger than the idle noise.")
+        print("      A larger pad, or a shorter lead to it, helps most.")
+        if not native:
+            print("      Check the 1 MOhm resistor is really 1 MOhm and")
+            print("      really goes to GND — that is what makes the pad")
+            print("      hold charge long enough to time.")
+    else:
+        print("   -> no change at all. Either nothing touched the pad,")
+        print("      or it is not connected to pin %s." % pads[0])
+        if not native:
+            print("      With no pull-down at all the reading pins at 0")
+            print("      or at the safety cap and never moves.")
 
 # ── What to change ───────────────────────────────────────────
 banner("what to change in config.py")
@@ -239,7 +294,9 @@ print("""
 
    Nothing in step 7 when you touched the pad
        Wrong pin, or nothing attached. Bare copper, foil or a screw
-       head all work; no resistor needed on the ESP32-S3.
+       head all work. On an ESP32 no resistor is needed; on a Pico the
+       pad needs a 1 MOhm resistor from the pin to GND, and without it
+       the reading never moves.
 
    All of it looked right
        The strip is good. Next: tools/radio_check.py — and attach
