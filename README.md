@@ -88,6 +88,11 @@ the bridge into Cloudflare.
 the [TTN map](https://www.thethingsnetwork.org/map). No gateway in range
 at either end means none of this works, and no antenna will fix it.
 
+**Have a pair of Pico Ws already?** → **[pico_w/](pico_w/)** runs the
+whole lamp on them over WiFi — the same firmware, the radio swapped for
+a subnet broadcast. Everything except the radio is real, so it is the
+fastest way to see the thing work while parts are in the post.
+
 You can prove everything except the radio with a laptop while you wait
 for parts — **→ [docs/TESTING.md](docs/TESTING.md)**.
 

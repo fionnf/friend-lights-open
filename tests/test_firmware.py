@@ -108,8 +108,21 @@ def run(label="", config_extra=""):
         utime.sleep_ms = real_sleep
         fw.utime.sleep_ms = real_sleep
 
-    check("watchdog was armed", fw.wdt is not None)
-    check("watchdog is being fed", fw.wdt.feeds > 10, fw.wdt.feeds)
+    # The Pico W bench lamp turns the watchdog off on purpose: the
+    # RP2040's maxes out around 8.4 s and cannot be stretched the way
+    # the ESP32's can, so it would reset the board partway through
+    # every re-upload. Both states are correct — what must never happen
+    # is main() assuming one of them.
+    import config as cfg_mod
+    wants_wdt = getattr(cfg_mod, "WATCHDOG_ENABLED", True)
+    if wants_wdt:
+        check("watchdog was armed", fw.wdt is not None)
+        check("watchdog is being fed",
+              fw.wdt is not None and fw.wdt.feeds > 10,
+              fw.wdt.feeds if fw.wdt else None)
+    else:
+        check("watchdog stayed off, as the config asked", fw.wdt is None)
+        check("...and the loop ran anyway", iters[0] > 10, iters[0])
     check("no reset was triggered", machine.reset_count[0] == 0)
 
     print("\npersistence")
@@ -384,6 +397,66 @@ def run_strip_test_checks():
           "radio_check" in text)
 
 
+def run_udp_checks():
+    """The WiFi broadcast transport the Pico W bench lamp runs on."""
+    print("\nudp transport")
+    from net.udp_peer import UDPPeer
+    import codec
+
+    calls = []
+
+    def wifi(tick=None):
+        calls.append(1)
+        return True
+
+    udp = UDPPeer(wifi)
+    check("it starts once WiFi is up", udp.start() is True)
+    check("...and asked for WiFi rather than assuming it", len(calls) == 1)
+
+    # WiFi is unmetered: no budget, no duty cycle. That is the point of
+    # testing on it — the lamp's behaviour without a radio's rationing.
+    check("no daily budget", udp.min_interval_ms == 0)
+    check("no duty-cycle floor", udp.min_gap_ms == 0)
+
+    frame = codec.encode(2, 1234, 567, 8)
+    check("a frame goes out", udp.send(frame) is True)
+    check("and so does the next, immediately", udp.send(frame) is True)
+
+    sock = udp._sock
+    check("it broadcast to the subnet",
+          sock.sent and sock.sent[0][1][0] == "255.255.255.255", sock.sent)
+    check("on the configured port",
+          sock.sent[0][1][1] == udp.port, sock.sent)
+
+    # Receiving: a real frame, then nothing, then junk.
+    sock.inbox.append((frame, ("192.168.1.9", udp.port)))
+    got = udp.poll()
+    check("a peer's frame is delivered", got == [frame], got)
+    check("an empty socket is not an error", udp.poll() == [])
+
+    sock.inbox.append((b"not a frame", ("192.168.1.9", udp.port)))
+    raw = udp.poll()
+    check("junk is passed up, not raised on", len(raw) == 1)
+    try:
+        codec.decode(raw[0])
+        decoded = True
+    except Exception:
+        decoded = False
+    check("...and the codec is what rejects it", decoded is False)
+
+    # A failed WiFi connect must degrade, never raise.
+    dead = UDPPeer(lambda tick=None: False)
+    check("no WiFi means not connected, not a crash",
+          dead.start() is False and dead.connected is False)
+    check("...and sending is simply refused", dead.send(frame) is False)
+
+    boom = UDPPeer(lambda tick=None: 1 / 0)
+    check("a raising connect is caught too", boom.start() is False)
+
+    udp.stop()
+    check("stop() releases the socket", udp._sock is None)
+
+
 def run_router_checks():
     print("\nrouter")
     from net.transport import Router, Transport
@@ -431,6 +504,12 @@ if __name__ == "__main__":
     # render, and keep retrying, because a loose board-to-board
     # connector must never mean a dark lamp.
     run(label="E5")
+    # The Pico W bench lamp: no radio, WiFi broadcast instead, a button
+    # where the ESP32 has a touch pad, and no watchdog. It is the
+    # configuration someone will actually boot first, so it gets the
+    # same executed-not-compiled treatment as the real one.
+    pico = open(os.path.join(ROOT, "pico_w", "config.lamp1.py")).read()
+    run(label="pico-w", config_extra=pico)
     run(label="SX1262", config_extra=(
         'LORA_RADIO = "SX1262"\n'
         'LORA_DEV_ADDR = "260B1111"\n'
@@ -441,6 +520,7 @@ if __name__ == "__main__":
     run_abp_checks()
     run_finder_checks()
     run_strip_test_checks()
+    run_udp_checks()
     run_router_checks()
     print("\n%d failed" % len(failures) if failures else "\nall passed")
     sys.exit(1 if failures else 0)

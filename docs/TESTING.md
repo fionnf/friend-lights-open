@@ -5,6 +5,17 @@ while you wait for parts: the cloud half is where the fiddly
 configuration lives, and finding a wrong webhook now is much cheaper than
 debugging it beside a lamp that "just doesn't work".
 
+### The realest test without LoRa: two Pico Ws
+
+If you have a pair of Raspberry Pi Pico Ws, **[pico_w/](../pico_w/)**
+runs the entire lamp on them over WiFi. Same firmware, same CRDT, same
+colour engine, same control page — only the radio is swapped for a
+broadcast to the subnet. Press a button on one and the other's strip
+drifts to match.
+
+Everything below is still worth doing, because it covers the cloud half
+the Picos never touch.
+
 ### The real test: simulate an uplink in TTN
 
 This is the one that matters, because it exercises your **actual**

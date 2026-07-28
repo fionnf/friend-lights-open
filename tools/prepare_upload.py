@@ -4,6 +4,8 @@ Build a folder that IS the lamp's filesystem, ready to upload.
 
     python3 tools/prepare_upload.py
 
+    python3 tools/prepare_upload.py --pico     Pico W bench lamps
+
 Writes upload/lamp1/ and upload/lamp2/. Open one in Thonny, select
 everything inside it, right-click -> "Upload to /". Done.
 
@@ -31,10 +33,15 @@ sys.path.insert(0, HERE)
 from install import device_files                              # noqa: E402
 
 
-def build(lamp, root=ROOT, out_root=None):
-    """Stage one lamp's board filesystem. Returns (path, warning)."""
+def build(lamp, root=ROOT, out_root=None, pico=False):
+    """Stage one lamp's board filesystem. Returns (path, warning).
+
+    `pico` takes the config from pico_w/ instead — a Pico W bench lamp,
+    which runs the identical firmware with the radio swapped for WiFi
+    broadcast. Same staging, same upload, different one file.
+    """
     out_root = out_root or os.path.join(root, "upload")
-    out = os.path.join(out_root, "lamp%d" % lamp)
+    out = os.path.join(out_root, "%s%d" % ("pico" if pico else "lamp", lamp))
 
     # Rebuild from scratch: a leftover file from an older version would
     # otherwise ride along forever, and stale firmware on a LoRa-only
@@ -49,7 +56,10 @@ def build(lamp, root=ROOT, out_root=None):
         shutil.copy(local, dest)
 
     warning = None
-    config = os.path.join(root, "firmware", "config.lamp%d.py" % lamp)
+    if pico:
+        config = os.path.join(root, "pico_w", "config.lamp%d.py" % lamp)
+    else:
+        config = os.path.join(root, "firmware", "config.lamp%d.py" % lamp)
     dest = os.path.join(out, "config.py")
     if os.path.exists(config):
         # Lands as config.py — the board only ever knows that name.
@@ -178,11 +188,19 @@ def tree(path, prefix=""):
             tree(full, prefix + ("   " if last else "|  "))
 
 
-def main():
-    print("\nStaging what goes on each board...\n")
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    pico = "--pico" in argv
+
+    if pico:
+        print("\nStaging two Pico W bench lamps...")
+        print("WiFi and everything else are already set in pico_w/.\n")
+    else:
+        print("\nStaging what goes on each board...\n")
+
     problems = []
     for lamp in (1, 2):
-        out, warning = build(lamp)
+        out, warning = build(lamp, pico=pico)
         rel = os.path.relpath(out, ROOT)
         if warning:
             print("  %s  -- %s" % (rel, warning))
@@ -191,9 +209,10 @@ def main():
             print("  %s" % rel)
     print()
 
-    first = os.path.join(ROOT, "upload", "lamp1")
+    first = os.path.join(ROOT, "upload",
+                         "pico1" if pico else "lamp1")
     if os.path.isdir(first):
-        print("  upload/lamp1/ contains:")
+        print("  %s/ contains:" % os.path.relpath(first, ROOT))
         tree(first)
         print()
 
@@ -208,13 +227,15 @@ def main():
         print("      python3 tools/apply_env.py && python3 %s\n"
               % os.path.relpath(__file__, ROOT))
 
+    a, b = ("pico1", "pico2") if pico else ("lamp1", "lamp2")
     print("  Now, in Thonny:")
     print("    1. View -> Files")
-    print("    2. In the top pane, open  upload/lamp1")
+    print("    2. In the top pane, open  upload/%s" % a)
     print("    3. Select everything in it  (Ctrl-A / Cmd-A)")
     print("    4. Right-click -> Upload to /")
-    print("    5. Repeat with upload/lamp2 on the other board")
-    print("\n  Full walkthrough: docs/FLASHING.md\n")
+    print("    5. Repeat with upload/%s on the other board" % b)
+    print("\n  Full walkthrough: %s\n"
+          % ("pico_w/README.md" if pico else "docs/FLASHING.md"))
     return 0
 
 

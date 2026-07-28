@@ -322,7 +322,19 @@ def build_transports(tick=None):
         except Exception as e:
             print("[lora] unavailable: %s" % e)
 
-    if _cfg("WIFI_ENABLED", False):
+    if _cfg("UDP_ENABLED", False):
+        # Two lamps on one WiFi network, no broker and nothing to
+        # deploy. Everything above this line is the same code the
+        # LoRaWAN lamp runs, so this exercises all of it.
+        try:
+            from net.udp_peer import UDPPeer
+            udp = UDPPeer(ensure_wifi, port=_cfg("UDP_PORT", 41234))
+            udp.start(tick=tick)
+            router.add(udp)
+        except Exception as e:
+            print("[udp] unavailable: %s" % e)
+
+    if _cfg("WIFI_ENABLED", False) and _cfg("MQTT_BROKER", ""):
         try:
             from net.mqtt_wifi import MQTTWiFi
             prefix = _cfg("MQTT_PREFIX", "friendlights")
@@ -337,30 +349,52 @@ def build_transports(tick=None):
     return router
 
 
+def ensure_wifi(tick=None):
+    """Bring WiFi up if it is not already. Returns True when joined.
+
+    Shared by every WiFi transport rather than living inside one of
+    them: a lamp running both MQTT and UDP must not connect twice, and
+    a lamp running only UDP should not need the MQTT code imported to
+    get onto a network.
+    """
+    import network
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    if wlan.isconnected():
+        return True
+    for ssid, password in _cfg("WIFI_NETWORKS", []):
+        print("[wifi] trying %s..." % ssid)
+        try:
+            wlan.connect(ssid, password)
+        except Exception as e:
+            print("[wifi] %s: %s" % (ssid, e))
+            continue
+        deadline = utime.ticks_add(utime.ticks_ms(), 15_000)
+        while not wlan.isconnected():
+            if utime.ticks_diff(deadline, utime.ticks_ms()) <= 0:
+                try:
+                    wlan.disconnect()
+                except Exception:
+                    pass
+                break
+            feed()
+            if tick:
+                tick()
+            utime.sleep_ms(50)
+        if wlan.isconnected():
+            print("[wifi] connected — %s" % wlan.ifconfig()[0])
+            return True
+    print("[wifi] no known network in range")
+    return False
+
+
 def _mqtt_factory():
     """Connect WiFi if needed, then return a connected MQTT client."""
-    import network
     import ubinascii
     from umqtt.simple import MQTTClient
 
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
-    if not wlan.isconnected():
-        for ssid, password in _cfg("WIFI_NETWORKS", []):
-            print("[wifi] trying %s..." % ssid)
-            wlan.connect(ssid, password)
-            deadline = utime.ticks_add(utime.ticks_ms(), 12_000)
-            while not wlan.isconnected():
-                if utime.ticks_diff(deadline, utime.ticks_ms()) <= 0:
-                    wlan.disconnect()
-                    break
-                feed()
-                utime.sleep_ms(50)
-            if wlan.isconnected():
-                print("[wifi] connected — %s" % wlan.ifconfig()[0])
-                break
-        else:
-            raise OSError("no known WiFi network")
+    if not ensure_wifi():
+        raise OSError("no known WiFi network")
 
     uid = ubinascii.hexlify(machine.unique_id()).decode()
     client = MQTTClient("lamp%d_%s" % (_cfg("LAMP_ID", 1), uid),
@@ -426,7 +460,8 @@ def main():
     shared = SharedColour(lamp_id)
     on, brightness = restore_state(shared)
 
-    touch = TouchManager(_cfg("TOUCH_PINS", []), _cfg("TOUCH_THRESHOLD", 20000))
+    touch = TouchManager(_cfg("TOUCH_PINS", []), _cfg("TOUCH_THRESHOLD", 20000),
+                         buttons=_cfg("BUTTON_PINS", []))
     touch.calibrate_all()
 
     router = build_transports(tick=pulser.tick)
