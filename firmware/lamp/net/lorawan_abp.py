@@ -64,7 +64,7 @@ class LoRaWANABP(Transport):
 
     def __init__(self, radio, dev_addr, nwk_skey, app_skey,
                  port=8, sf=9, tx_power=14,
-                 min_interval_ms=DEFAULT_MIN_INTERVAL_MS,
+                 min_interval_ms=DEFAULT_MIN_INTERVAL_MS, burst=4,
                  channels=EU868_UPLINK_CHANNELS,
                  rx2_frequency=EU868_RX2_FREQUENCY, rx2_sf=EU868_RX2_SF):
         Transport.__init__(self)
@@ -87,6 +87,7 @@ class LoRaWANABP(Transport):
         self.sf = sf
         self.tx_power = tx_power
         self.min_interval_ms = min_interval_ms
+        self.burst = burst
         self.channels = tuple(channels)
         self.rx2_frequency = rx2_frequency
         self.rx2_sf = rx2_sf

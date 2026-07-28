@@ -42,15 +42,23 @@ class Transport:
     """
 
     name = "transport"
-    # Minimum gap between outbound frames. 0 = send whatever you like.
+    # Average gap between outbound frames. 0 = send whatever you like.
     min_interval_ms = 0
+    # How many sends may happen back-to-back before the average gap
+    # kicks in. See the throttling section below.
+    burst = 4
 
     # Backoff bounds for automatic reconnection.
     RETRY_MIN_MS = 60_000
     RETRY_MAX_MS = 30 * 60 * 1000
 
     def __init__(self):
-        self._next_send_at = 0
+        # Two tokens at boot, not a full bucket: the boot announcement
+        # spends one, leaving one so the first touch after power-on
+        # still goes out immediately — while a lamp on flaky power
+        # can't mint a full burst per brownout.
+        self._tokens = 2.0
+        self._last_refill = utime.ticks_ms()
         self._retry_at = None
         self._retry_backoff = 0
         self.connected = False
@@ -77,6 +85,20 @@ class Transport:
         raise NotImplementedError
 
     # ── Throttling ──────────────────────────────────────────
+    # A token bucket, not a fixed gap. The budget being protected is
+    # the FRIEND's ten downlinks a day, and a fixed three-hour gap
+    # spends it in the most annoying way possible: evenly, so even the
+    # first touch of a quiet day waits hours. The bucket holds `burst`
+    # sends and refills one per `min_interval_ms` — so the first few
+    # touches of the day travel in seconds, the wait only appears once
+    # the burst is spent, and the steady-state daily total is identical.
+
+    def _refill(self, now):
+        elapsed = utime.ticks_diff(now, self._last_refill)
+        if elapsed > 0:
+            self._tokens = min(float(self.burst),
+                               self._tokens + elapsed / self.min_interval_ms)
+            self._last_refill = now
 
     def ready_to_send(self, now=None):
         if not self.connected:
@@ -84,27 +106,31 @@ class Transport:
         if self.min_interval_ms <= 0:
             return True
         now = utime.ticks_ms() if now is None else now
-        return utime.ticks_diff(now, self._next_send_at) >= 0
+        self._refill(now)
+        return self._tokens >= 1.0
 
     def send(self, payload, force=False):
         """Transmit if the budget allows. Returns True if it went out.
 
-        `force` bypasses the interval but not the connection check — used
-        for things that must not wait, like a power-off, accepting that
-        it spends from the airtime budget.
+        `force` bypasses the bucket but not the connection check — used
+        for things that must not wait, like a power-off. It still spends
+        a token when one is there: a forced send is a real downlink on
+        the friend's lamp, whatever the reason for forcing it.
         """
         if not self.connected:
             return False
-        now = utime.ticks_ms()
-        if not force and not self.ready_to_send(now):
-            return False
+        if self.min_interval_ms > 0:
+            self._refill(utime.ticks_ms())
+            if not force and self._tokens < 1.0:
+                return False
         try:
             self._send(payload)
         except Exception as e:
             print("[%s] send failed: %s" % (self.name, e))
             self.connected = False
             return False
-        self._next_send_at = utime.ticks_add(now, self.min_interval_ms)
+        if self.min_interval_ms > 0:
+            self._tokens = max(0.0, self._tokens - 1.0)
         return True
 
 

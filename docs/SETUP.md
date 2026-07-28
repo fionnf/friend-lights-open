@@ -547,7 +547,8 @@ This is the tool that tells you what's actually happening, so it's worth
 learning now. Open your device in TTN and click **Live data**.
 
 An ABP lamp says nothing until it transmits — no join to watch. Touch
-the pad, and within three hours you'll see:
+the pad — the first few touches of a day go out within seconds — and
+you'll see:
 
 | What you see | What it means |
 |---|---|
@@ -565,8 +566,10 @@ Do the same for lamp 2, and the two are linked.
 ### The very first sync
 
 A brand-new lamp starts at counter zero, so until it hears from its
-friend both lamps will look the same dull warm white. Touch one. Within
-three hours the other starts drifting. Nothing is broken in the meantime.
+friend both lamps will look the same dull warm white. Touch one — the
+first touches of a day travel in seconds — and the other starts
+drifting. Only a busy day's later touches wait for the budget; see
+[the README](../README.md#living-with-ten-messages-a-day).
 
 ---
 

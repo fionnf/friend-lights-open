@@ -101,6 +101,11 @@ def run(label="", config_extra=""):
         _tb.print_exc()
         check("main() booted without raising", False, repr(e))
         return
+    finally:
+        # Later suites share this utime module and sleep for real
+        # (simulated) time; the counting patch must not outlive main().
+        utime.sleep_ms = real_sleep
+        fw.utime.sleep_ms = real_sleep
 
     check("watchdog was armed", fw.wdt is not None)
     check("watchdog is being fed", fw.wdt.feeds > 10, fw.wdt.feeds)
@@ -139,9 +144,23 @@ def run_transport_checks():
     check("reports connected", lora.connected is True)
 
     frame = codec.encode(2, 1234, 567, 8)
+    # Boot grants two tokens: one for the boot announcement, one so the
+    # first real touch still goes out immediately.
     check("first send goes out", lora.send(frame) is True)
-    check("second send is throttled", lora.send(frame) is False)
+    check("second send goes out too — the boot allowance",
+          lora.send(frame) is True)
+    check("the third is throttled", lora.send(frame) is False)
     check("force bypasses the throttle", lora.send(frame, force=True) is True)
+    import utime as _t
+    _t.sleep_ms(3 * 60 * 60 * 1000 + 1000)     # one refill later
+    check("one refill interval buys exactly one send",
+          lora.send(frame) is True and lora.send(frame) is False)
+    _t.sleep_ms(24 * 60 * 60 * 1000)           # a quiet day
+    for _ in range(lora.burst):
+        check("after a quiet day, a burst send goes out",
+              lora.send(frame) is True)
+    check("but the bucket never exceeds the burst",
+          lora.send(frame) is False)
     check("payload was sent as hex",
           any("MSGHEX" in w for w in uart.written))
 
@@ -227,7 +246,9 @@ def run_abp_checks():
           [len(f) for f in radio.sent])
     check("...and the receiver was reopened afterwards",
           radio.listening == (869_525_000, 9))
-    check("the next is throttled", lora.send(codec.encode(2, 7, 8, 9)) is False)
+    lora.send(codec.encode(2, 7, 8, 9))        # spends the boot allowance
+    check("an empty bucket throttles",
+          lora.send(codec.encode(2, 7, 8, 9)) is False)
 
     # ── No keys ──
     blind = LoRaWANABP(lambda: radio, None, None, None)

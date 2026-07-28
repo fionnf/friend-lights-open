@@ -9,7 +9,9 @@ free, community-run LoRaWAN network — by borrowing the internet
 connection of whoever hosts the nearest gateway. No router, no SIM, no
 hotspot, no monthly bill.
 
-**~€35 a lamp, once. Nothing after that.**
+The hardware is a **Seeed XIAO ESP32S3** with the **Wio-SX1262** LoRa
+module clipped onto it — two boards that click together, no wiring —
+plus an LED strip. **~€35 a lamp, once. Nothing after that.**
 
 > **Status:** complete and loadable, **not yet tested on real hardware.**
 > Everything is green against stubbed MicroPython, including a test that
@@ -195,13 +197,16 @@ The catch is that the ten are *your friend's*. Every message you send
 becomes a downlink on their lamp, so however freely yours could transmit,
 it must not send more than they can receive.
 
-So a lamp sends at most **ten times a day**: a heartbeat every 12 hours
-so an idle pair still converges, plus up to eight change-driven messages,
-throttled to one every three hours.
+The budget is spent as a **token bucket**, not a fixed gap: the first
+few touches of the day go out **immediately** — your friend sees them in
+seconds — and the budget refills one message every three hours. Only a
+run of touches deeper than the burst starts waiting. Steady state is
+still at most ten a day: up to eight changes plus a heartbeat every
+12 hours so an idle pair converges.
 
 Touch it twenty times in an evening and your friend does not get twenty
-messages. They get one containing all twenty, and their lamp pulses to
-say so. Nothing is lost; it travels together.
+messages. The first few arrive as they happen; the rest travel together
+in the next one, and their lamp pulses to say so. Nothing is lost.
 
 **This is the product, not a limitation.** Want a mirror instead? Lower
 `ARRIVAL_FADE_MS` and `LORA_MIN_INTERVAL_MS` — and hit the ceiling by

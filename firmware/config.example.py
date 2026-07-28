@@ -32,6 +32,12 @@ LORA_APP_SKEY = ""             # 32 hex
 LORA_SF       = 9              # must match RX2 on your frequency plan
 LORA_TX_POWER = 14             # dBm; EU868 legal ceiling
 
+# Which code drives the chip (the LoRaWAN layer above is ours either
+# way). "upstream" = micropython-lib's SX1262 driver, maintained by
+# MicroPython's own maintainers — the default. "native" = this
+# project's register-level driver, kept as probe and fallback.
+LORA_DRIVER   = "upstream"
+
 # SPI to the Wio-SX1262 — the BOARD-TO-BOARD kit pins.
 #
 # You can usually ignore this block. There are two ways to attach the
@@ -73,16 +79,18 @@ LORA_TX_PIN  = 43
 LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
-# How often we may transmit when something has changed.
+# The sending budget. The limit is NOT our own airtime — 30 s/day at
+# ~0.2 s a frame allows about 150 uplinks. The limit is that every
+# uplink the bridge forwards becomes a DOWNLINK on your friend's lamp,
+# and TTN allows each device only TEN downlinks a day.
 #
-# The limit is NOT our own airtime — 30 s/day at ~0.2 s a frame allows
-# about 150 uplinks. The limit is that every uplink the bridge forwards
-# becomes a DOWNLINK on your friend's lamp, and TTN allows each device
-# only TEN downlinks a day. Uplinking more often just means the extra
-# ones are discarded before they reach them.
-#
-# Budget: 2/day for heartbeats + 8/day for changes = 10.
+# It is spent as a token bucket, not a fixed gap: up to LORA_BURST
+# touches go out IMMEDIATELY, and the budget refills one message every
+# LORA_MIN_INTERVAL_MS. So on a normal day every touch arrives within
+# seconds, and only a run of more than LORA_BURST touches starts
+# waiting. Steady-state total: ~8 changes + 2 heartbeats = 10 a day.
 LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
+LORA_BURST           = 4
 
 # ── WiFi (optional) ─────────────────────────────────────────
 # Entirely optional. A lamp with no WiFi works perfectly over LoRa alone;

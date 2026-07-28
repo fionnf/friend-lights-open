@@ -93,8 +93,11 @@ LORA_RX_PIN  = 44
 LORA_BAUD    = 9600
 
 # Ten downlinks a day is your FRIEND's allowance, and every uplink the
-# bridge forwards spends one of theirs. 2 heartbeats + 8 changes = 10.
+# bridge forwards spends one of theirs. Spent as a token bucket: up to
+# LORA_BURST touches go out immediately, refilling one per interval —
+# so touches arrive in seconds until a day gets unusually busy.
 LORA_MIN_INTERVAL_MS = 3 * 60 * 60 * 1000
+LORA_BURST           = 4
 
 # ── Home WiFi (optional) ────────────────────────────────────
 # Can also be entered from the lamp's own page later, with no cable.

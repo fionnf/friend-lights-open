@@ -63,7 +63,7 @@ class LoRaWANE5(Transport):
 
     def __init__(self, uart, dev_eui, app_eui, app_key,
                  region="EU868", lora_class="C", port=8,
-                 min_interval_ms=DEFAULT_MIN_INTERVAL_MS):
+                 min_interval_ms=DEFAULT_MIN_INTERVAL_MS, burst=4):
         Transport.__init__(self)
         self.uart      = uart
         self.dev_eui   = dev_eui
@@ -77,6 +77,7 @@ class LoRaWANE5(Transport):
         self.lora_class = lora_class
         self.port       = port
         self.min_interval_ms = min_interval_ms
+        self.burst = burst
         self._rx = []
         self._buf = b""
 

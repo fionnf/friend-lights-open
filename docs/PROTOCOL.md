@@ -121,11 +121,27 @@ transmission anyway.
 
 So the send budget is ten a day:
 
-| | Interval | Per day |
+| | Rate | Per day |
 |---|---|---|
 | Heartbeat (idle) | 12 h | 2 |
-| Change-driven, throttled | 3 h | up to 8 |
+| Change-driven | 3 h **average** — a token bucket | up to 8 |
 | | | **10** |
+
+The change budget is a token bucket (`LORA_BURST`, default 4), not a
+fixed gap: the first few touches of a day transmit immediately, and the
+bucket refills one send every three hours. Latency and budget stopped
+being the same knob — a quiet day's touches arrive in seconds while the
+daily total stays inside the friend's ten downlinks. The lamp boots
+with two tokens, not a full bucket, so flaky power cannot mint bursts.
+
+Where the ten comes from: TTN's Fair Use Policy for the (free) Things
+Stack Sandbox — **30 seconds of uplink airtime and 10 downlink messages
+per device per 24 hours**. Sources: the policy thread
+["Fair Use Policy explained"](https://www.thethingsnetwork.org/forum/t/fair-use-policy-explained/1300)
+on the TTN forum, and the
+[duty cycle documentation](https://www.thethingsnetwork.org/docs/lorawan/duty-cycle/),
+which restates both numbers. It is a policy, not a hard enforcement —
+which is a reason to respect it by design, not to creep past it.
 
 `tools/simulate.py` is what caught this: the original 15-minute /
 1-hour figures produced 38 uplinks a day against a 10/day cap, with three
